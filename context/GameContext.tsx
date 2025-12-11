@@ -2,15 +2,20 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { FundatoryBet } from '@/lib/betting';
+import { saveRound, convertGameRoundToFirestore, saveLocalRound } from '@/lib/rounds';
 
 interface GameContextType {
     currentRound: any;
     players: any[];
     course: any;
     activeHole: number;
+    teeOrder: string[]; // Array of player IDs in tee order
+    currentTeeIndex: number; // Index of current player in tee order
     startRound: (selectedCourse: any, selectedPlayers: any[]) => void;
     updateScore: (playerId: string, holeNumber: number, score: number) => void;
     setActiveHole: (hole: number) => void;
+    nextTee: () => void; // Move to next player in tee order
+    setTeeOrder: (order: string[]) => void; // Set custom tee order
     fundatoryBets: FundatoryBet[];
     addFundatoryBet: (bet: FundatoryBet) => void;
     updateFundatoryBet: (betId: string, status: 'success' | 'fail') => void;
@@ -25,6 +30,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const [players, setPlayers] = useState<any[]>([]);
     const [course, setCourse] = useState<any>(null);
     const [activeHole, setActiveHoleState] = useState(1);
+    const [teeOrder, setTeeOrderState] = useState<string[]>([]);
+    const [currentTeeIndex, setCurrentTeeIndex] = useState(0);
     const [fundatoryBets, setFundatoryBets] = useState<FundatoryBet[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -90,6 +97,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setCourse(selectedCourse);
         setPlayers(selectedPlayers);
         setActiveHoleState(1);
+        // Initialize tee order with player IDs (default order)
+        const playerIds = selectedPlayers.map((p: any) => p.id);
+        setTeeOrderState(playerIds);
+        setCurrentTeeIndex(0);
     };
 
     const updateScore = (playerId: string, holeNumber: number, score: number) => {
@@ -104,6 +115,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     const setActiveHole = (hole: number) => {
         setActiveHoleState(hole);
+        // Reset tee order to first player when moving to new hole
+        setCurrentTeeIndex(0);
+    };
+
+    const nextTee = () => {
+        if (teeOrder.length === 0) return;
+        setCurrentTeeIndex((prev) => (prev + 1) % teeOrder.length);
+    };
+
+    const setTeeOrder = (order: string[]) => {
+        setTeeOrderState(order);
+        setCurrentTeeIndex(0); // Reset to first player
     };
 
     const addFundatoryBet = (bet: FundatoryBet) => {
@@ -116,11 +139,66 @@ export function GameProvider({ children }: { children: ReactNode }) {
         );
     };
 
-    const endRound = () => {
+    const endRound = async () => {
+        if (currentRound && course) {
+            try {
+                // Convert to Firestore format
+                const layoutId = currentRound.course?.selectedLayoutKey || 'default';
+                const courseId = course.id || course.name; // Fallback to name if no ID
+                const layoutName = course.layouts?.[layoutId]?.name || 'Main';
+                
+                // Create player names map for denormalization
+                const playerNames: { [key: string]: string } = {};
+                players.forEach((p: any) => {
+                    playerNames[p.id] = p.name;
+                });
+                
+                const firestoreRound = convertGameRoundToFirestore(
+                    {
+                        ...currentRound,
+                        bets: {
+                            skins: {},
+                            nassau: null,
+                            fundatory: fundatoryBets
+                        }
+                    },
+                    courseId,
+                    layoutId
+                );
+                
+                // Add metadata for easier display
+                const roundWithMetadata = {
+                    ...firestoreRound,
+                    courseName: course.name,
+                    layoutName: layoutName,
+                    playerNames: playerNames
+                };
+                
+                // Try to save to Firebase
+                try {
+                    const roundId = await saveRound(roundWithMetadata);
+                    console.log('Round saved to Firebase:', roundId);
+                } catch (error) {
+                    console.error('Failed to save to Firebase, saving locally:', error);
+                    // Save locally as fallback
+                    saveLocalRound({
+                        id: `local_${Date.now()}`,
+                        ...roundWithMetadata
+                    });
+                }
+            } catch (error) {
+                console.error('Error saving round:', error);
+                // Still clear the round even if save fails
+            }
+        }
+        
+        // Clear state
         setCurrentRound(null);
         setPlayers([]);
         setCourse(null);
         setActiveHoleState(1);
+        setTeeOrderState([]);
+        setCurrentTeeIndex(0);
         setFundatoryBets([]);
         if (typeof window !== 'undefined') {
             localStorage.removeItem('currentRound');
@@ -135,9 +213,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 players,
                 course,
                 activeHole,
+                teeOrder,
+                currentTeeIndex,
                 startRound,
                 updateScore,
                 setActiveHole,
+                nextTee,
+                setTeeOrder,
                 fundatoryBets,
                 addFundatoryBet,
                 updateFundatoryBet,

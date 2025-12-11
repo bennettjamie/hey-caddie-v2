@@ -61,21 +61,29 @@ export interface Round {
     courseId: string;
     layoutId: string;
     date: string; // ISO string
-    players: string[]; // Array of User UIDs
+    players: string[]; // Array of User UIDs or player IDs
     scores: {
         [holeNumber: number]: {
             [playerId: string]: number; // Score relative to par (e.g., -1, 0, 1)
         };
     };
     bets: {
-        skins: {
+        skins?: {
             [holeNumber: number]: {
                 winnerId?: string;
                 value: number; // e.g., 0.25 merits
                 carryOver: boolean;
             };
         };
+        nassau?: any;
+        fundatory?: any[];
         // Add other bet types here
     };
     status: 'active' | 'completed';
+    createdAt?: any; // Firestore Timestamp
+    updatedAt?: any; // Firestore Timestamp
+    // Additional metadata
+    courseName?: string; // Denormalized for easier display
+    layoutName?: string; // Denormalized for easier display
+    playerNames?: { [playerId: string]: string }; // Denormalized player names
 }

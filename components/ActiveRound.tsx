@@ -9,10 +9,22 @@ import ScoreInput from '@/components/ScoreInput';
 import Leaderboard from '@/components/Leaderboard';
 import PlayerCard from '@/components/ui/PlayerCard';
 import VoiceIndicator from '@/components/ui/VoiceIndicator';
+import TeeOrderDisplay from '@/components/ui/TeeOrderDisplay';
 import Fuse from 'fuse.js';
 
 export default function ActiveRound() {
-    const { currentRound, activeHole, updateScore, setActiveHole, fundatoryBets } = useGame();
+    const { 
+        currentRound, 
+        activeHole, 
+        updateScore, 
+        setActiveHole, 
+        fundatoryBets,
+        teeOrder,
+        currentTeeIndex,
+        nextTee,
+        setTeeOrder,
+        endRound
+    } = useGame();
     const {
         isListening,
         isListeningForHotWord,
@@ -33,10 +45,12 @@ export default function ActiveRound() {
             window.__updateVoiceGameState({
                 currentRound,
                 activeHole,
-                fundatoryBets
+                fundatoryBets,
+                teeOrder,
+                currentTeeIndex
             });
         }
-    }, [currentRound, activeHole, fundatoryBets]);
+    }, [currentRound, activeHole, fundatoryBets, teeOrder, currentTeeIndex]);
 
     // Fuzzy match player names
     const findPlayerByName = (name: string) => {
@@ -77,6 +91,8 @@ export default function ActiveRound() {
             if (player) {
                 const holeNum = lastCommand.holeNumber || activeHole;
                 updateScore(player.id, holeNum, lastCommand.score);
+                // Auto-advance tee order after scoring
+                nextTee();
             }
         } else if (lastCommand.type === 'MULTI_SCORE') {
             // Handle multiple scores in one command
@@ -87,6 +103,10 @@ export default function ActiveRound() {
                     updateScore(player.id, holeNum, scoreData.score);
                 }
             });
+            // Reset tee order after all scores recorded
+            if (teeOrder.length > 0) {
+                setTeeOrder(teeOrder);
+            }
         } else if (lastCommand.type === 'FUNDATORY_RESULT') {
             // Handle fundatory bet results
             const player = findPlayerByName(lastCommand.player);
@@ -104,8 +124,48 @@ export default function ActiveRound() {
                     console.log('Fundatory bet result:', pendingBet.id, lastCommand.result);
                 }
             }
+        } else if (lastCommand.type === 'NEXT_HOLE') {
+            if (activeHole < 18) {
+                setActiveHole(activeHole + 1);
+            }
+        } else if (lastCommand.type === 'PREVIOUS_HOLE') {
+            if (activeHole > 1) {
+                setActiveHole(activeHole - 1);
+            }
+        } else if (lastCommand.type === 'GO_TO_HOLE') {
+            const targetHole = lastCommand.holeNumber;
+            if (targetHole >= 1 && targetHole <= 18) {
+                setActiveHole(targetHole);
+            }
+        } else if (lastCommand.type === 'NEXT_TEE') {
+            nextTee();
+        } else if (lastCommand.type === 'CHANGE_TEE_ORDER') {
+            const playerNames = lastCommand.playerNames || [];
+            const newOrder: string[] = [];
+            playerNames.forEach((name: string) => {
+                const player = findPlayerByName(name);
+                if (player) {
+                    newOrder.push(player.id);
+                }
+            });
+            if (newOrder.length > 0) {
+                setTeeOrder(newOrder);
+            }
+        } else if (lastCommand.type === 'END_ROUND') {
+            if (confirm('End this round? Your scores will be saved to history.')) {
+                endRound();
+            }
+        } else if (lastCommand.type === 'CHANGE_SCORE') {
+            const player = findPlayerByName(lastCommand.player);
+            if (player) {
+                updateScore(player.id, activeHole, lastCommand.score);
+            }
+        } else if (lastCommand.type === 'UNDO_SCORE') {
+            // Remove last score for current hole
+            // This would need a more sophisticated undo system
+            console.log('Undo score - feature to be implemented');
         }
-    }, [lastCommand, currentRound, activeHole, updateScore, fundatoryBets]);
+    }, [lastCommand, currentRound, activeHole, updateScore, fundatoryBets, nextTee, setTeeOrder, endRound, teeOrder]);
 
     if (!currentRound) return null;
 
@@ -187,6 +247,15 @@ export default function ActiveRound() {
                     </div>
                 </div>
             </header>
+
+            {/* Tee Order Display */}
+            {teeOrder.length > 0 && (
+                <TeeOrderDisplay 
+                    players={currentRound.players} 
+                    teeOrder={teeOrder} 
+                    currentTeeIndex={currentTeeIndex}
+                />
+            )}
 
             {/* Navigation */}
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '1rem' }}>

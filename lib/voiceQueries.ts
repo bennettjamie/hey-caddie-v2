@@ -98,6 +98,30 @@ export function processQuery(
         return generateCourseResponse(gameState);
     }
 
+    // Tee order queries
+    if (
+        lowerText.includes("who's up") ||
+        lowerText.includes("who is up") ||
+        lowerText.includes("who's next") ||
+        lowerText.includes("who is next") ||
+        lowerText.includes("whose turn") ||
+        lowerText.includes("who goes") ||
+        lowerText.includes("tee order") ||
+        lowerText.includes("who's teeing")
+    ) {
+        return generateTeeOrderResponse(gameState);
+    }
+
+    // Hole number queries
+    if (
+        lowerText.includes("what hole") ||
+        lowerText.includes("which hole") ||
+        lowerText.includes("current hole") ||
+        lowerText.includes("what hole are we on")
+    ) {
+        return generateHoleNumberResponse(gameState);
+    }
+
     return null;
 }
 
@@ -381,5 +405,59 @@ function extractHoleRange(text: string): { start: number; end: number } | undefi
         }
     }
     return undefined;
+}
+
+function generateTeeOrderResponse(gameState: any): QueryResponse {
+    if (!gameState.currentRound || !gameState.currentRound.players) {
+        return {
+            text: "No active round found.",
+            type: 'general'
+        };
+    }
+
+    const players = gameState.currentRound.players;
+    const teeOrder = gameState.teeOrder || [];
+    const currentTeeIndex = gameState.currentTeeIndex || 0;
+
+    if (teeOrder.length === 0 || currentTeeIndex >= teeOrder.length) {
+        return {
+            text: "Tee order not set.",
+            type: 'general'
+        };
+    }
+
+    const currentPlayerId = teeOrder[currentTeeIndex];
+    const currentPlayer = players.find((p: any) => p.id === currentPlayerId);
+
+    if (!currentPlayer) {
+        return {
+            text: "Could not find current player.",
+            type: 'general'
+        };
+    }
+
+    const nextIndex = (currentTeeIndex + 1) % teeOrder.length;
+    const nextPlayerId = teeOrder[nextIndex];
+    const nextPlayer = players.find((p: any) => p.id === nextPlayerId);
+
+    if (nextPlayer && nextPlayer.id !== currentPlayer.id) {
+        return {
+            text: `${currentPlayer.name} is up. ${nextPlayer.name} is next.`,
+            type: 'general'
+        };
+    }
+
+    return {
+        text: `${currentPlayer.name} is up.`,
+        type: 'general'
+    };
+}
+
+function generateHoleNumberResponse(gameState: any): QueryResponse {
+    const activeHole = gameState.activeHole || 1;
+    return {
+        text: `You're on hole ${activeHole}.`,
+        type: 'course'
+    };
 }
 

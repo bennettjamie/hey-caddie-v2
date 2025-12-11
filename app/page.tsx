@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useGame } from '@/context/GameContext';
 import { useVoice } from '@/context/VoiceContext';
 import CourseSelector from '@/components/CourseSelector';
@@ -135,7 +136,15 @@ export default function Home() {
     return (
         <main className="container">
             <header suppressHydrationWarning style={{ padding: '2rem 0', textAlign: 'center' }}>
-                <h1>Hey Caddy</h1>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <Link href="/history" style={{ fontSize: '0.875rem', color: 'var(--info)', textDecoration: 'none' }}>
+                        📊 History
+                    </Link>
+                    <h1 style={{ margin: 0 }}>Hey Caddy</h1>
+                    <Link href="/stats" style={{ fontSize: '0.875rem', color: 'var(--info)', textDecoration: 'none' }}>
+                        📈 Stats
+                    </Link>
+                </div>
                 {isOffline && <div suppressHydrationWarning style={{ color: 'red', marginTop: '0.5rem' }}>Offline Mode</div>}
             </header>
 

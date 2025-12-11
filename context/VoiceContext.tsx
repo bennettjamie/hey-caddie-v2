@@ -64,27 +64,95 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             lowerText.includes("what is") ||
             lowerText.includes("how") ||
             lowerText.includes("read back") ||
-            lowerText.includes("show me")) {
+            lowerText.includes("show me") ||
+            lowerText.includes("tell me")) {
             return { type: 'QUESTION', text: lowerText };
         }
 
-        if (lowerText.includes('start round')) {
+        // Round management
+        if (lowerText.includes('start round') || lowerText.includes('begin round')) {
             return { type: 'START_ROUND' };
         }
 
-        // Fundatory Parsing
-        if (lowerText.includes('hit the gap')) {
-            const parts = lowerText.split(' hit the gap');
+        if (lowerText.includes('end round') || lowerText.includes('finish round') || lowerText.includes('complete round')) {
+            return { type: 'END_ROUND' };
+        }
+
+        // Hole navigation commands
+        if (lowerText.match(/next hole|move to next|advance hole/)) {
+            return { type: 'NEXT_HOLE' };
+        }
+
+        if (lowerText.match(/previous hole|last hole|go back|back hole/)) {
+            return { type: 'PREVIOUS_HOLE' };
+        }
+
+        const goToHoleMatch = lowerText.match(/(?:go to|jump to|switch to|hole)\s+(?:number\s+)?(\d+)/);
+        if (goToHoleMatch) {
+            return { type: 'GO_TO_HOLE', holeNumber: parseInt(goToHoleMatch[1], 10) };
+        }
+
+        // Tee order commands
+        if (lowerText.match(/who'?s?\s+(?:up|next|teeing|hitting|shooting)/) ||
+            lowerText.match(/whose turn|who goes|who is up|who's up next/)) {
+            return { type: 'TEE_ORDER_QUERY' };
+        }
+
+        if (lowerText.match(/next player|next up|move to next player/)) {
+            return { type: 'NEXT_TEE' };
+        }
+
+        const changeOrderMatch = lowerText.match(/(?:change|set|update)\s+(?:tee\s+)?order(?: to)?\s+(.+)/);
+        if (changeOrderMatch) {
+            const playerNames = changeOrderMatch[1].split(/[,\s]+and\s+|,\s*|\s+and\s+/).map(s => s.trim()).filter(Boolean);
+            return { type: 'CHANGE_TEE_ORDER', playerNames };
+        }
+
+        // Fundatory Parsing (enhanced)
+        if (lowerText.match(/hit the gap|made the gap|got through the gap|cleared the gap/)) {
+            const parts = lowerText.split(/(?:hit|made|got through|cleared)\s+the\s+gap/);
             if (parts.length > 0) {
-                return { type: 'FUNDATORY_RESULT', player: parts[0].trim(), result: 'success' };
+                const playerName = parts[0].trim() || 'me';
+                return { type: 'FUNDATORY_RESULT', player: playerName, result: 'success' };
             }
         }
 
-        if (lowerText.includes('missed the gap')) {
-            const parts = lowerText.split(' missed the gap');
+        if (lowerText.match(/missed the gap|didn't make|did not make|failed the gap/)) {
+            const parts = lowerText.split(/(?:missed|didn't make|did not make|failed)\s+(?:the\s+)?gap/);
             if (parts.length > 0) {
-                return { type: 'FUNDATORY_RESULT', player: parts[0].trim(), result: 'fail' };
+                const playerName = parts[0].trim() || 'me';
+                return { type: 'FUNDATORY_RESULT', player: playerName, result: 'fail' };
             }
+        }
+
+        // Betting commands
+        if (lowerText.match(/start skins|begin skins|play skins/)) {
+            const valueMatch = lowerText.match(/(?:for|at|worth)\s+(\d+(?:\.\d+)?)/);
+            const value = valueMatch ? parseFloat(valueMatch[1]) : 0.25;
+            return { type: 'START_SKINS', value };
+        }
+
+        if (lowerText.match(/start nassau|begin nassau|play nassau/)) {
+            return { type: 'START_NASSAU' };
+        }
+
+        // Score correction commands
+        if (lowerText.match(/change (?:my|the) score|update score|correct score|fix score/)) {
+            // Try to extract player and new score
+            const playerMatch = lowerText.match(/(?:for|by)\s+([^,]+?)(?:\s+to|\s+is|\s+was|\s+got)/);
+            const scoreMatch = lowerText.match(/(?:to|is|was|got)\s+(?:a\s+)?(ace|hole in one|double eagle|albatross|eagle|birdie|par|bogey|double bogey|triple bogey)/);
+            if (scoreMatch) {
+                const scoreTerm = scoreMatch[1];
+                const scoreValue = scoreTerms[scoreTerm] ?? scoreTerms[scoreTerm.replace(' ', '')];
+                if (scoreValue !== undefined) {
+                    const playerName = playerMatch ? playerMatch[1].trim() : 'me';
+                    return { type: 'CHANGE_SCORE', player: playerName, score: scoreValue };
+                }
+            }
+        }
+
+        if (lowerText.match(/undo|undo last|take back|remove last score/)) {
+            return { type: 'UNDO_SCORE' };
         }
 
         // Extract hole number if present
@@ -128,17 +196,30 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             };
         }
 
-        // Single score parsing
+        // Single score parsing (enhanced patterns)
         for (const [term, value] of Object.entries(scoreTerms)) {
-            const parts = lowerText.split(` got a ${term}`);
-            if (parts.length > 1) {
-                const playerName = parts[0].trim();
-                return { type: 'SCORE', player: playerName, score: value, term, holeNumber };
-            }
-            const parts2 = lowerText.split(` got ${term}`);
-            if (parts2.length > 1) {
-                const playerName = parts2[0].trim();
-                return { type: 'SCORE', player: playerName, score: value, term, holeNumber };
+            // Pattern: "Player got a [term]"
+            const pattern1 = new RegExp(`([^,]+?)\\s+got\\s+a\\s+${term.replace(/\s+/g, '\\s+')}`, 'i');
+            // Pattern: "Player got [term]"
+            const pattern2 = new RegExp(`([^,]+?)\\s+got\\s+${term.replace(/\s+/g, '\\s+')}`, 'i');
+            // Pattern: "Player scored [term]"
+            const pattern3 = new RegExp(`([^,]+?)\\s+scored\\s+(?:a\\s+)?${term.replace(/\s+/g, '\\s+')}`, 'i');
+            // Pattern: "Player made [term]"
+            const pattern4 = new RegExp(`([^,]+?)\\s+made\\s+(?:a\\s+)?${term.replace(/\s+/g, '\\s+')}`, 'i');
+            // Pattern: "Player [term]" (simplified)
+            const pattern5 = new RegExp(`([^,]+?)\\s+${term.replace(/\s+/g, '\\s+')}`, 'i');
+            
+            let match;
+            if ((match = lowerText.match(pattern1)) || 
+                (match = lowerText.match(pattern2)) ||
+                (match = lowerText.match(pattern3)) ||
+                (match = lowerText.match(pattern4)) ||
+                (match = lowerText.match(pattern5))) {
+                const playerName = match[1].trim();
+                // Skip if it's a question or query
+                if (!playerName.match(/^(who|what|where|when|why|how|tell|show|read)/)) {
+                    return { type: 'SCORE', player: playerName, score: value, term, holeNumber };
+                }
             }
         }
 

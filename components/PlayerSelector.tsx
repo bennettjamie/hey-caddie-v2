@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getAllPlayers, getLocalPlayers, getOrCreatePlayerByName, Player as PlayerType } from '@/lib/players';
 
 interface Player {
     id: string;
@@ -18,7 +19,11 @@ export default function PlayerSelector({ onSelect, initialPlayers = [] }: Player
     const [recentPlayers, setRecentPlayers] = useState<Player[]>([]);
 
     useEffect(() => {
-        // Load recent players from localStorage
+        loadPlayers();
+    }, []);
+
+    const loadPlayers = async () => {
+        // Load recent players from localStorage first (for quick display)
         if (typeof window !== 'undefined') {
             try {
                 const stored = localStorage.getItem('recentPlayers');
@@ -29,19 +34,55 @@ export default function PlayerSelector({ onSelect, initialPlayers = [] }: Player
                 console.error('Error loading recent players:', error);
             }
         }
-    }, []);
 
-    const addPlayer = () => {
+        // Also try to load from Firebase
+        try {
+            const firebasePlayers = await getAllPlayers(50);
+            if (firebasePlayers.length > 0) {
+                // Merge with recent players, prioritizing Firebase
+                const combined = [...firebasePlayers, ...recentPlayers];
+                const unique = combined.filter((p, index, self) => 
+                    index === self.findIndex((p2) => p2.id === p.id)
+                );
+                setRecentPlayers(unique.slice(0, 20)); // Keep top 20
+            }
+        } catch (error) {
+            console.error('Error loading players from Firebase:', error);
+            // Fallback to local storage
+            const localPlayers = getLocalPlayers();
+            if (localPlayers.length > 0) {
+                setRecentPlayers(localPlayers.slice(0, 20));
+            }
+        }
+    };
+
+    const addPlayer = async () => {
         if (newPlayerName.trim() && !players.find(p => p.name.toLowerCase() === newPlayerName.toLowerCase())) {
-            const newPlayer: Player = {
-                id: `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                name: newPlayerName.trim()
-            };
-            const updated = [...players, newPlayer];
-            setPlayers(updated);
-            setNewPlayerName('');
-            onSelect(updated);
-            saveRecentPlayer(newPlayer);
+            try {
+                // Try to get or create player in Firebase
+                const player = await getOrCreatePlayerByName(newPlayerName.trim());
+                const newPlayer: Player = {
+                    id: player.id,
+                    name: player.name
+                };
+                const updated = [...players, newPlayer];
+                setPlayers(updated);
+                setNewPlayerName('');
+                onSelect(updated);
+                saveRecentPlayer(newPlayer);
+            } catch (error) {
+                console.error('Error adding player:', error);
+                // Fallback to local player
+                const newPlayer: Player = {
+                    id: `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    name: newPlayerName.trim()
+                };
+                const updated = [...players, newPlayer];
+                setPlayers(updated);
+                setNewPlayerName('');
+                onSelect(updated);
+                saveRecentPlayer(newPlayer);
+            }
         }
     };
 
