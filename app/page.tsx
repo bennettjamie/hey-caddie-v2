@@ -10,9 +10,19 @@ import ActiveRound from '@/components/ActiveRound';
 import { getAllCourses, findCoursesNearLocation, Course } from '@/lib/courses';
 
 export default function Home() {
+    // #region agent log
+    if (typeof window !== 'undefined') {
+        fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:12',message:'Home component mounting',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    }
+    // #endregion
     const [isOffline, setIsOffline] = useState(false);
-    const { currentRound, startRound, isLoading } = useGame();
-    const { startHotWordListening, isListeningForHotWord } = useVoice();
+    const { currentRound, startRound, isLoading, hasRecentRound, restoreRecentRound } = useGame();
+    // #region agent log
+    if (typeof window !== 'undefined') {
+        fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:14',message:'Home after useGame',data:{hasCurrentRound:!!currentRound,currentRoundStatus:currentRound?.status,isLoading,courseName:currentRound?.course?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    }
+    // #endregion
+    const { startHotWordListening, isListeningForHotWord, isSupported, lastCommand, transcript } = useVoice();
     const [showCourseSelector, setShowCourseSelector] = useState(false);
     const [selectedCourse, setSelectedCourse] = useState<any>(null);
     const [selectedPlayers, setSelectedPlayers] = useState<any[]>([]);
@@ -34,16 +44,36 @@ export default function Home() {
         };
     }, []);
 
-    // Load recent courses
+    // Load recent courses (cached for faster loading)
     useEffect(() => {
         const loadRecentCourses = async () => {
             try {
+                // First, try to load from cache for instant display
+                const cachedRecent = localStorage.getItem('recentCoursesData');
+                if (cachedRecent) {
+                    try {
+                        const cached = JSON.parse(cachedRecent);
+                        if (Array.isArray(cached) && cached.length > 0) {
+                            setRecentCourses(cached.slice(0, 5) as Course[]);
+                        }
+                    } catch (e) {
+                        // Ignore cache parse errors
+                    }
+                }
+                
+                // Then load fresh data in background
                 const allCourses = await getAllCourses();
                 const recentIds = JSON.parse(localStorage.getItem('recentCourses') || '[]');
                 const recent = recentIds
                     .map((id: string) => allCourses.find(c => c.id === id))
                     .filter(Boolean)
                     .slice(0, 5) as Course[];
+                
+                // Update cache
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('recentCoursesData', JSON.stringify(recent));
+                }
+                
                 setRecentCourses(recent);
             } catch (error) {
                 console.error('Error loading recent courses:', error);
@@ -77,17 +107,84 @@ export default function Home() {
 
     // Start hot word listening on mount
     useEffect(() => {
-        startHotWordListening();
-    }, [startHotWordListening]);
+        // Only start if supported and function exists
+        if (typeof window !== 'undefined' && startHotWordListening && isSupported) {
+            // Add a small delay to ensure VoiceContext is fully initialized
+            const timer = setTimeout(() => {
+                try {
+                    startHotWordListening();
+                } catch (error) {
+                    console.error('Error starting hot word listening:', error);
+                }
+            }, 100);
+            
+            return () => clearTimeout(timer);
+        }
+    }, [startHotWordListening, isSupported]);
+
+    // Handle voice commands on home page
+    useEffect(() => {
+        if (!lastCommand || currentRound) return; // Don't handle if already in a round
+
+        if (lastCommand.type === 'START_ROUND') {
+            // Voice command to start round - open course selector
+            setShowCourseSelector(true);
+        } else if (lastCommand.type === 'UNKNOWN' && transcript) {
+            // Try to parse "start a round at [course] with [players]"
+            const lowerText = transcript.toLowerCase();
+            const courseMatch = lowerText.match(/start\s+(?:a\s+)?round\s+at\s+([^,\s]+(?:\s+[^,\s]+)*)/);
+            const playersMatch = lowerText.match(/with\s+(.+?)(?:\s+and\s+)?(.+)?$/);
+            
+            if (courseMatch) {
+                const courseName = courseMatch[1].trim();
+                // Search for course
+                getAllCourses().then(courses => {
+                    const foundCourse = courses.find(c => 
+                        c.name.toLowerCase().includes(courseName.toLowerCase()) ||
+                        courseName.toLowerCase().includes(c.name.toLowerCase())
+                    );
+                    if (foundCourse) {
+                        const layoutNames = Object.keys(foundCourse.layouts || {}).map(key => foundCourse.layouts![key].name);
+                        const firstLayout = layoutNames[0] || 'Default';
+                        const layoutKey = Object.keys(foundCourse.layouts || {}).find(
+                            key => foundCourse.layouts![key].name === firstLayout
+                        ) || 'default';
+                        handleCourseSelect({
+                            ...foundCourse,
+                            selectedLayout: firstLayout,
+                            selectedLayoutKey: layoutKey
+                        });
+                    }
+                });
+                
+                // Parse players if mentioned
+                if (playersMatch) {
+                    const playerNames = [playersMatch[1], playersMatch[2]]
+                        .filter(Boolean)
+                        .map(name => name.trim())
+                        .flatMap(name => name.split(/\s+and\s+/))
+                        .map(name => ({ id: `p_${Date.now()}_${Math.random()}`, name: name.trim() }));
+                    if (playerNames.length > 0) {
+                        setSelectedPlayers(playerNames);
+                    }
+                }
+            }
+        }
+    }, [lastCommand, transcript, currentRound]);
 
     const handleCourseSelect = (course: any) => {
         setSelectedCourse(course);
         setShowCourseSelector(false);
-        // Save to recent courses
+        // Save to recent courses (both ID and full data for faster loading)
         if (typeof window !== 'undefined') {
             const recentIds = JSON.parse(localStorage.getItem('recentCourses') || '[]');
             const updated = [course.id, ...recentIds.filter((id: string) => id !== course.id)].slice(0, 10);
             localStorage.setItem('recentCourses', JSON.stringify(updated));
+            
+            // Also cache the course data
+            const recentData = JSON.parse(localStorage.getItem('recentCoursesData') || '[]');
+            const updatedData = [course, ...recentData.filter((c: Course) => c.id !== course.id)].slice(0, 10);
+            localStorage.setItem('recentCoursesData', JSON.stringify(updatedData));
         }
         // Default to at least one player if none selected
         if (selectedPlayers.length === 0) {
@@ -130,6 +227,11 @@ export default function Home() {
     }
 
     if (currentRound) {
+        // #region agent log
+        if (typeof window !== 'undefined') {
+            fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:144',message:'Rendering ActiveRound because currentRound exists',data:{status:currentRound.status,courseName:currentRound.course?.name,activeHole:currentRound.activeHole,hasScores:!!currentRound.scores},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        }
+        // #endregion
         return <ActiveRound />;
     }
 
@@ -137,9 +239,14 @@ export default function Home() {
         <main className="container">
             <header suppressHydrationWarning style={{ padding: '2rem 0', textAlign: 'center' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <Link href="/history" style={{ fontSize: '0.875rem', color: 'var(--info)', textDecoration: 'none' }}>
-                        📊 History
-                    </Link>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        <Link href="/history" style={{ fontSize: '0.875rem', color: 'var(--info)', textDecoration: 'none' }}>
+                            📊 History
+                        </Link>
+                        <Link href="/test-betting" style={{ fontSize: '0.875rem', color: 'var(--warning)', textDecoration: 'none' }}>
+                            🧪 Test
+                        </Link>
+                    </div>
                     <h1 style={{ margin: 0 }}>Hey Caddy</h1>
                     <Link href="/stats" style={{ fontSize: '0.875rem', color: 'var(--info)', textDecoration: 'none' }}>
                         📈 Stats
@@ -147,6 +254,23 @@ export default function Home() {
                 </div>
                 {isOffline && <div suppressHydrationWarning style={{ color: 'red', marginTop: '0.5rem' }}>Offline Mode</div>}
             </header>
+
+            {/* Continue Previous Round Button */}
+            {hasRecentRound && hasRecentRound() && (
+                <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
+                    <button
+                        className="btn"
+                        onClick={restoreRecentRound}
+                        style={{
+                            backgroundColor: 'var(--info)',
+                            padding: '0.75rem 2rem',
+                            fontSize: '1rem'
+                        }}
+                    >
+                        ↻ Continue Previous Round
+                    </button>
+                </div>
+            )}
 
             {!showCourseSelector && !selectedCourse ? (
                 <>
@@ -209,9 +333,14 @@ export default function Home() {
                     <div className="card" style={{ marginTop: '1rem' }}>
                         <h3>📍 Find Courses Near Me</h3>
                         {locationError ? (
-                            <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
-                                {locationError}
-                            </p>
+                            <div>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
+                                    {locationError}
+                                </p>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '0.5rem', fontStyle: 'italic' }}>
+                                    To find courses near you, please allow location access in your browser settings.
+                                </p>
+                            </div>
                         ) : nearbyCourses.length > 0 ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
                                 {nearbyCourses.map(course => (
@@ -236,9 +365,14 @@ export default function Home() {
                                 ))}
                             </div>
                         ) : (
-                            <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
-                                Finding courses near you...
-                            </p>
+                            <div>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
+                                    Finding courses near you...
+                                </p>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '0.5rem', fontStyle: 'italic' }}>
+                                    Note: This feature searches courses in your database. To add more courses, use the "Add Course" button in the course selector.
+                                </p>
+                            </div>
                         )}
                     </div>
                 </>
@@ -279,7 +413,7 @@ export default function Home() {
                                 backgroundColor: 'var(--success)'
                             }}
                         >
-                            Start Round
+                            Start Round with {selectedPlayers.length} {selectedPlayers.length === 1 ? 'Player' : 'Players'}
                         </button>
                     )}
                 </div>

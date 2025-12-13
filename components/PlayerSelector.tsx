@@ -208,22 +208,6 @@ export default function PlayerSelector({ onSelect, initialPlayers = [] }: Player
                     </div>
                 )}
             </div>
-
-            {players.length > 0 && (
-                <button
-                    className="btn"
-                    onClick={() => onSelect(players)}
-                    style={{
-                        width: '100%',
-                        marginTop: '1rem',
-                        backgroundColor: 'var(--success)',
-                        fontSize: '1.125rem',
-                        padding: '1rem'
-                    }}
-                >
-                    Start Round with {players.length} {players.length === 1 ? 'Player' : 'Players'}
-                </button>
-            )}
         </div>
     );
 }
