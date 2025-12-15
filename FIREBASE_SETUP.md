@@ -158,3 +158,7 @@ Once Firebase is set up:
 - [Firestore Security Rules](https://firebase.google.com/docs/firestore/security/get-started)
 - [Next.js Environment Variables](https://nextjs.org/docs/basic-features/environment-variables)
 
+
+
+
+

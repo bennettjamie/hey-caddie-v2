@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getCompletedRounds, getLocalRounds, Round } from '@/lib/rounds';
 import { getCourse } from '@/lib/courses';
+import { calculateSkins, calculateNassau } from '@/lib/betting';
 
 export default function RoundHistory() {
     const [rounds, setRounds] = useState<Round[]>([]);
@@ -336,6 +337,147 @@ function RoundDetail({ round }: { round: Round }) {
                     </table>
                 </div>
             </div>
+
+            {/* Betting Results */}
+            {round.bets && (round.bets.skins || round.bets.nassau || (round.bets.fundatory && round.bets.fundatory.length > 0)) && (
+                <div className="card" style={{ marginTop: '1rem' }}>
+                    <h3>Betting Results</h3>
+                    
+                    {/* MRTZ Summary */}
+                    {round.bets.mrtzResults && Object.keys(round.bets.mrtzResults).length > 0 && (
+                        <div style={{
+                            padding: '0.75rem',
+                            backgroundColor: 'rgba(0, 242, 96, 0.1)',
+                            borderRadius: '8px',
+                            marginTop: '0.75rem',
+                            marginBottom: '1rem',
+                            border: '1px solid var(--primary)'
+                        }}>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                                Net MRTZ:
+                            </div>
+                            {Object.entries(round.bets.mrtzResults)
+                                .sort((a, b) => b[1] - a[1])
+                                .map(([playerId, amount]) => (
+                                    <div key={playerId} style={{ fontSize: '0.875rem' }}>
+                                        {playerNames[playerId] || playerId}:{' '}
+                                        <span style={{
+                                            color: amount > 0 ? 'var(--success)' : amount < 0 ? 'var(--danger)' : 'var(--text)',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            {amount > 0 ? '+' : ''}{amount.toFixed(2)} MRTZ
+                                        </span>
+                                    </div>
+                                ))}
+                        </div>
+                    )}
+
+                    {/* Skins Results */}
+                    {round.bets.skins && Object.keys(round.bets.skins).length > 0 && (
+                        <div style={{ marginBottom: '1rem' }}>
+                            <h4 style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>Skins</h4>
+                            <div style={{
+                                maxHeight: '200px',
+                                overflowY: 'auto',
+                                border: '1px solid var(--border)',
+                                borderRadius: '6px',
+                                padding: '0.5rem',
+                                fontSize: '0.875rem'
+                            }}>
+                                {Object.entries(round.bets.skins)
+                                    .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+                                    .map(([holeNum, skin]: [string, any]) => (
+                                        <div key={holeNum} style={{ padding: '0.25rem 0', borderBottom: '1px solid var(--border)' }}>
+                                            Hole {holeNum}: {skin.winnerId ? (
+                                                <span style={{ color: 'var(--success)' }}>
+                                                    {playerNames[skin.winnerId] || skin.winnerId} won {skin.value.toFixed(2)} MRTZ
+                                                </span>
+                                            ) : (
+                                                <span style={{ color: 'var(--warning)' }}>
+                                                    Push ({skin.value.toFixed(2)} MRTZ carried over)
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Nassau Results */}
+                    {round.bets.nassau && (
+                        <div style={{ marginBottom: '1rem' }}>
+                            <h4 style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>Nassau</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem' }}>
+                                {round.bets.nassau.front9WinnerId && (
+                                    <div style={{
+                                        padding: '0.5rem',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                                        borderRadius: '6px',
+                                        fontSize: '0.875rem'
+                                    }}>
+                                        <div style={{ fontWeight: 'bold' }}>Front 9</div>
+                                        <div>{playerNames[round.bets.nassau.front9WinnerId] || round.bets.nassau.front9WinnerId}</div>
+                                    </div>
+                                )}
+                                {round.bets.nassau.back9WinnerId && (
+                                    <div style={{
+                                        padding: '0.5rem',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                                        borderRadius: '6px',
+                                        fontSize: '0.875rem'
+                                    }}>
+                                        <div style={{ fontWeight: 'bold' }}>Back 9</div>
+                                        <div>{playerNames[round.bets.nassau.back9WinnerId] || round.bets.nassau.back9WinnerId}</div>
+                                    </div>
+                                )}
+                                {round.bets.nassau.overallWinnerId && (
+                                    <div style={{
+                                        padding: '0.5rem',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                                        borderRadius: '6px',
+                                        fontSize: '0.875rem'
+                                    }}>
+                                        <div style={{ fontWeight: 'bold' }}>Overall</div>
+                                        <div>{playerNames[round.bets.nassau.overallWinnerId] || round.bets.nassau.overallWinnerId}</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Fundatory Results */}
+                    {round.bets.fundatory && Array.isArray(round.bets.fundatory) && round.bets.fundatory.length > 0 && (
+                        <div>
+                            <h4 style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>Fundatory</h4>
+                            <div style={{
+                                maxHeight: '150px',
+                                overflowY: 'auto',
+                                border: '1px solid var(--border)',
+                                borderRadius: '6px',
+                                padding: '0.5rem',
+                                fontSize: '0.875rem'
+                            }}>
+                                {round.bets.fundatory.map((bet: any, index: number) => (
+                                    <div key={index} style={{ padding: '0.25rem 0', borderBottom: '1px solid var(--border)' }}>
+                                        {bet.gapDescription} (Hole {bet.holeNumber}):{' '}
+                                        {playerNames[bet.targetId] || bet.targetId} {bet.status === 'success' ? 'hit' : 'missed'}
+                                        {' - '}
+                                        {bet.status === 'success' ? (
+                                            <span style={{ color: 'var(--success)' }}>
+                                                +{bet.amount} MRTZ
+                                            </span>
+                                        ) : (
+                                            <span style={{ color: 'var(--danger)' }}>
+                                                -{bet.amount} MRTZ
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

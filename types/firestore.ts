@@ -8,6 +8,7 @@ export interface User {
         averageScore: number;
     };
     recentPlayers: string[]; // Array of User UIDs
+    mrtzBalance?: number; // Current MRTZ balance
 }
 
 export interface Course {
@@ -79,7 +80,7 @@ export interface Round {
         fundatory?: any[];
         // Add other bet types here
     };
-    status: 'active' | 'completed';
+    status: 'active' | 'completed' | 'partial';
     createdAt?: any; // Firestore Timestamp
     updatedAt?: any; // Firestore Timestamp
     // Additional metadata

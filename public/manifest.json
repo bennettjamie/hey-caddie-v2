@@ -4,18 +4,37 @@
     "description": "Voice-activated Disc Golf Caddy",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#ffffff",
-    "theme_color": "#000000",
+    "orientation": "portrait",
+    "background_color": "#1e1e1e",
+    "theme_color": "#00f260",
+    "scope": "/",
     "icons": [
         {
             "src": "/icon-192x192.png",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
         },
         {
             "src": "/icon-512x512.png",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": ["sports", "games", "utilities"],
+    "shortcuts": [
+        {
+            "name": "Start Round",
+            "short_name": "Start",
+            "description": "Start a new round",
+            "url": "/?action=start",
+            "icons": [
+                {
+                    "src": "/icon-192x192.png",
+                    "sizes": "192x192"
+                }
+            ]
         }
     ]
 }

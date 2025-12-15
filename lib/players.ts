@@ -17,6 +17,7 @@ import {
     limit,
     Timestamp 
 } from 'firebase/firestore';
+import { queueOperation, isOnline } from './syncQueue';
 
 export interface Player {
     id: string;
@@ -30,6 +31,7 @@ export interface Player {
         bestRound?: number;
         bestCourse?: string;
     };
+    mrtzBalance?: number; // Current MRTZ balance
     createdAt?: any;
     updatedAt?: any;
 }
@@ -40,6 +42,21 @@ const PLAYERS_COLLECTION = 'players';
  * Create a new player
  */
 export async function createPlayer(playerData: Omit<Player, 'id'>): Promise<string> {
+    // If offline, queue for sync and save locally
+    if (!isOnline()) {
+        const tempPlayer: Player = {
+            id: `temp_${Date.now()}`,
+            ...playerData,
+            stats: playerData.stats || {
+                roundsPlayed: 0,
+                averageScore: 0
+            }
+        };
+        saveLocalPlayer(tempPlayer);
+        queueOperation('createPlayer', playerData);
+        return tempPlayer.id;
+    }
+
     try {
         const docRef = await addDoc(collection(db, PLAYERS_COLLECTION), {
             ...playerData,
@@ -53,6 +70,11 @@ export async function createPlayer(playerData: Omit<Player, 'id'>): Promise<stri
         return docRef.id;
     } catch (error) {
         console.error('Error creating player:', error);
+        // Queue for retry if network error
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('network') || errorMessage.includes('Failed to fetch') || errorMessage.includes('offline')) {
+            queueOperation('createPlayer', playerData);
+        }
         throw error;
     }
 }
@@ -274,6 +296,21 @@ export async function getOrCreatePlayerByName(name: string, userId?: string): Pr
                 averageScore: 0
             }
         };
+    }
+}
+
+/**
+ * Get frequently played players (friends) - players you've played with most
+ */
+export async function getFrequentlyPlayedPlayers(limitCount: number = 20): Promise<Player[]> {
+    try {
+        // For now, return all players sorted by name
+        // In the future, this could be sorted by frequency of play
+        const players = await getAllPlayers(limitCount);
+        return players.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+        console.error('Error getting frequently played players:', error);
+        return [];
     }
 }
 

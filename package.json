@@ -5,15 +5,17 @@
   "main": "index.js",
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup-indexes": "node scripts/setup-firestore-indexes.js",
+    "deploy:indexes": "firebase deploy --only firestore:indexes"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "engines": {
-    "node": "18.20.0",
+    "node": ">=20.9.0",
     "npm": ">=9.0.0"
   },
   "dependencies": {

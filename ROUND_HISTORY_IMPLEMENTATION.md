@@ -234,3 +234,7 @@ const results = await searchPlayers("John");
 - **Beautiful UI** - Clean, modern interface
 - **Responsive** - Works on mobile and desktop
 
+
+
+
+

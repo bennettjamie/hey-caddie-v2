@@ -17,6 +17,7 @@ import {
     Timestamp 
 } from 'firebase/firestore';
 import { Round } from '@/types/firestore';
+import { queueOperation, isOnline } from './syncQueue';
 
 const ROUNDS_COLLECTION = 'rounds';
 
@@ -24,6 +25,19 @@ const ROUNDS_COLLECTION = 'rounds';
  * Save a completed round to Firestore
  */
 export async function saveRound(roundData: Omit<Round, 'id'>): Promise<string> {
+    // Always save locally first
+    const tempRound: Round = {
+        id: `temp_${Date.now()}`,
+        ...roundData
+    };
+    saveLocalRound(tempRound);
+
+    // If offline, queue for sync
+    if (!isOnline()) {
+        queueOperation('saveRound', roundData);
+        return tempRound.id;
+    }
+
     try {
         const docRef = await addDoc(collection(db, ROUNDS_COLLECTION), {
             ...roundData,
@@ -33,6 +47,11 @@ export async function saveRound(roundData: Omit<Round, 'id'>): Promise<string> {
         return docRef.id;
     } catch (error) {
         console.error('Error saving round:', error);
+        // Queue for retry if network error
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('network') || errorMessage.includes('Failed to fetch') || errorMessage.includes('offline')) {
+            queueOperation('saveRound', roundData);
+        }
         throw error;
     }
 }
@@ -150,7 +169,8 @@ export async function updateRound(roundId: string, updates: Partial<Round>): Pro
 export function convertGameRoundToFirestore(
     gameRound: any,
     courseId: string,
-    layoutId: string
+    layoutId: string,
+    status: 'completed' | 'partial' = 'completed'
 ): Omit<Round, 'id'> {
     // Extract player IDs from game round
     const playerIds = gameRound.players?.map((p: any) => p.id || p.uid) || [];
@@ -166,7 +186,7 @@ export function convertGameRoundToFirestore(
             nassau: null,
             fundatory: []
         },
-        status: 'completed'
+        status: status
     };
 }
 

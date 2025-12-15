@@ -31,6 +31,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const [hotWordRecognition, setHotWordRecognition] = useState<any>(null);
     const [isSupported, setIsSupported] = useState(false);
     const gameStateRef = useRef<any>(null);
+    const retryCountRef = useRef<number>(0);
 
     // Score terms with variations
     const scoreTerms: { [key: string]: number } = {
@@ -439,7 +440,32 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     }, [recognition, isListening]);
 
     const startHotWordListening = useCallback(() => {
-        if (hotWordRecognition && !isListeningForHotWord) {
+        // Check browser support first
+        if (typeof window === 'undefined' || !(window.SpeechRecognition || window.webkitSpeechRecognition)) {
+            console.warn('Speech Recognition not supported in this browser');
+            return;
+        }
+        
+        // If not ready, schedule retry (with max retries to prevent infinite loops)
+        if (!hotWordRecognition) {
+            if (retryCountRef.current < 5) { // Max 5 retries
+                retryCountRef.current += 1;
+                console.log(`Hot word recognition not ready yet, retrying... (${retryCountRef.current}/5)`);
+                setTimeout(() => {
+                    startHotWordListening();
+                }, 500);
+            } else {
+                console.warn('Max retries reached for hot word recognition initialization');
+                retryCountRef.current = 0; // Reset for next attempt
+            }
+            return;
+        }
+        
+        // Reset retry count on successful initialization
+        retryCountRef.current = 0;
+        
+        // Safe execution with error handling
+        if (!isListeningForHotWord) {
             try {
                 stopSpeaking();
                 hotWordRecognition.start();
@@ -452,7 +478,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 console.error('Error starting hot word recognition:', error);
             }
         }
-    }, [hotWordRecognition, isListeningForHotWord, recognition]);
+    }, [hotWordRecognition, isListeningForHotWord, recognition, stopSpeaking]);
 
     const stopHotWordListening = useCallback(() => {
         if (hotWordRecognition && isListeningForHotWord) {

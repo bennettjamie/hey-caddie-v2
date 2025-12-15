@@ -7,7 +7,16 @@ interface TeeOrderDisplayProps {
 }
 
 export default function TeeOrderDisplay({ players, teeOrder, currentTeeIndex }: TeeOrderDisplayProps) {
-    if (!teeOrder || teeOrder.length === 0) {
+    // Add comprehensive safety checks
+    if (!players || !Array.isArray(players) || players.length === 0) {
+        return null;
+    }
+    
+    if (!teeOrder || !Array.isArray(teeOrder) || teeOrder.length === 0) {
+        return null;
+    }
+    
+    if (currentTeeIndex < 0 || currentTeeIndex >= teeOrder.length) {
         return null;
     }
 

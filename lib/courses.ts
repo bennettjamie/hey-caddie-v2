@@ -21,14 +21,30 @@ export async function getCourse(courseId: string): Promise<Course | null> {
 
 export async function getAllCourses(): Promise<Course[]> {
     try {
-        const coursesSnapshot = await getDocs(collection(db, 'courses'));
-        return coursesSnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data()
-        })) as Course[];
+        // Add timeout for Firebase operations
+        const timeoutPromise = new Promise<Course[]>((_, reject) => {
+            setTimeout(() => reject(new Error('Firebase query timed out')), 8000);
+        });
+        
+        const coursesPromise = getDocs(collection(db, 'courses')).then(snapshot => 
+            snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Course[]
+        );
+        
+        const courses = await Promise.race([coursesPromise, timeoutPromise]);
+        
+        // Update local cache with fresh data
+        if (typeof window !== 'undefined' && courses.length > 0) {
+            saveLocalCourses(courses);
+        }
+        
+        return courses;
     } catch (error) {
-        console.error('Error getting courses:', error);
-        return [];
+        console.error('Error getting courses from Firebase:', error);
+        // Return cached courses as fallback
+        return getLocalCourses();
     }
 }
 
@@ -48,12 +64,35 @@ export async function searchCourses(searchTerm: string): Promise<Course[]> {
 }
 
 export async function createCourse(course: Omit<Course, 'id'>): Promise<string> {
+    
+    // Create a timeout promise
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Firebase operation timed out after 10 seconds')), 10000);
+    });
+    
     try {
         const courseRef = doc(collection(db, 'courses'));
-        await setDoc(courseRef, course);
+        
+        // Race between setDoc and timeout
+        await Promise.race([
+            setDoc(courseRef, course),
+            timeoutPromise
+        ]);
         return courseRef.id;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error creating course:', error);
+        
+        // Fallback to localStorage if Firebase fails
+        if (typeof window !== 'undefined') {
+            const localCourses = getLocalCourses();
+            const newId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const newCourseWithId = { id: newId, ...course } as Course;
+            localCourses.push(newCourseWithId);
+            saveLocalCourses(localCourses);
+            console.log('Saved course to localStorage as fallback:', newId);
+            return newId;
+        }
+        
         throw error;
     }
 }
@@ -100,7 +139,12 @@ export function getLocalCourses(): Course[] {
     if (typeof window === 'undefined') return [];
     try {
         const stored = localStorage.getItem('courses');
-        return stored ? JSON.parse(stored) : [];
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            // Filter out any invalid entries
+            return Array.isArray(parsed) ? parsed.filter(c => c && c.id && c.name) : [];
+        }
+        return [];
     } catch {
         return [];
     }
@@ -110,7 +154,9 @@ export function getLocalCourses(): Course[] {
 export function saveLocalCourses(courses: Course[]): void {
     if (typeof window === 'undefined') return;
     try {
-        localStorage.setItem('courses', JSON.stringify(courses));
+        // Keep only valid courses and limit to last 100
+        const validCourses = courses.filter(c => c && c.id && c.name).slice(-100);
+        localStorage.setItem('courses', JSON.stringify(validCourses));
     } catch (error) {
         console.error('Error saving courses locally:', error);
     }
@@ -156,5 +202,255 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
         Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
+}
+
+/**
+ * Update par for a specific hole in a layout
+ */
+export async function updateCourseHolePar(
+    courseId: string,
+    layoutId: string,
+    holeNumber: number,
+    newPar: number
+): Promise<void> {
+    try {
+        const course = await getCourse(courseId);
+        if (!course) throw new Error('Course not found');
+        
+        const layout = course.layouts?.[layoutId];
+        if (!layout) throw new Error('Layout not found');
+        
+        const updatedHoles = {
+            ...layout.holes,
+            [holeNumber]: {
+                ...layout.holes[holeNumber],
+                par: newPar
+            }
+        };
+        
+        const updatedLayout: CourseLayout = {
+            ...layout,
+            holes: updatedHoles,
+            parTotal: Object.values(updatedHoles).reduce((sum, hole) => sum + (hole.par || 3), 0)
+        };
+        
+        const updatedLayouts = {
+            ...course.layouts,
+            [layoutId]: updatedLayout
+        };
+        
+        await updateDoc(doc(db, 'courses', courseId), {
+            layouts: updatedLayouts
+        });
+    } catch (error) {
+        console.error('Error updating course hole par:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update entire layout's par values
+ */
+export async function updateCourseLayoutPars(
+    courseId: string,
+    layoutId: string,
+    holePars: { [holeNumber: number]: number },
+    courseData?: Course // Optional: pass course data directly to avoid lookup
+): Promise<void> {
+    
+    // Handle local courses (saved to localStorage)
+    if (courseId.startsWith('local_')) {
+        let localCourses = getLocalCourses();
+        
+        // Use provided course data if available, otherwise look it up
+        let course = courseData && courseData.id === courseId ? courseData : localCourses.find(c => c.id === courseId);
+        
+        // If course not found, try to get it from raw localStorage
+        if (!course && typeof window !== 'undefined') {
+            try {
+                const raw = localStorage.getItem('courses');
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                        course = parsed.find((c: any) => c && c.id === courseId);
+                        if (course) {
+                            localCourses = parsed.filter((c: any) => c && c.id && c.name);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Error reading raw localStorage:', e);
+            }
+        }
+        
+        // If still not found, create a minimal course entry from courseData if available
+        if (!course && courseData) {
+            course = courseData;
+            // Add it to localCourses if it's not there
+            if (!localCourses.find(c => c.id === courseId)) {
+                localCourses.push(course);
+            }
+        }
+        
+        if (!course) {
+            throw new Error(`Course not found in localStorage. Course ID: ${courseId}. Please try adding the course again.`);
+        }
+        
+        const layout = course.layouts?.[layoutId];
+        if (!layout) {
+            throw new Error('Layout not found');
+        }
+        
+        // Update all holes with new par values
+        const updatedHoles: { [holeNumber: number]: any } = {};
+        // Get max hole from either holePars or existing layout
+        const existingHoleNumbers = Object.keys(layout.holes || {}).map(k => parseInt(k)).filter(n => !isNaN(n));
+        const newHoleNumbers = Object.keys(holePars).map(k => parseInt(k)).filter(n => !isNaN(n));
+        const allHoleNumbers = [...existingHoleNumbers, ...newHoleNumbers];
+        const maxHole = allHoleNumbers.length > 0 ? Math.max(...allHoleNumbers) : 18;
+        for (let i = 1; i <= maxHole; i++) {
+            const newPar = holePars[i] !== undefined ? holePars[i] : (layout.holes[i]?.par || 3);
+            updatedHoles[i] = {
+                ...(layout.holes[i] || {}),
+                par: newPar
+            };
+        }
+        
+        // Calculate new par total
+        const parTotal = Object.values(updatedHoles).reduce((sum, hole) => sum + (hole.par || 3), 0);
+        
+        const updatedLayout: CourseLayout = {
+            ...layout,
+            holes: updatedHoles,
+            parTotal
+        };
+        
+        const updatedLayouts = {
+            ...course.layouts,
+            [layoutId]: updatedLayout
+        };
+        
+        // Update the course in the array
+        const updatedCourse = {
+            ...course,
+            layouts: updatedLayouts
+        };
+        
+        // Save back to localStorage
+        const updatedCourses = localCourses.map(c => c.id === courseId ? updatedCourse : c);
+        saveLocalCourses(updatedCourses);
+        return;
+    }
+    
+    // Handle Firebase courses
+    try {
+        const course = await getCourse(courseId);
+        if (!course) throw new Error('Course not found');
+        
+        const layout = course.layouts?.[layoutId];
+        if (!layout) throw new Error('Layout not found');
+        
+        // Update all holes with new par values
+        const updatedHoles: { [holeNumber: number]: any } = {};
+        // Get max hole from either holePars or existing layout
+        const existingHoleNumbers = Object.keys(layout.holes || {}).map(k => parseInt(k)).filter(n => !isNaN(n));
+        const newHoleNumbers = Object.keys(holePars).map(k => parseInt(k)).filter(n => !isNaN(n));
+        const allHoleNumbers = [...existingHoleNumbers, ...newHoleNumbers];
+        const maxHole = allHoleNumbers.length > 0 ? Math.max(...allHoleNumbers) : 18;
+        for (let i = 1; i <= maxHole; i++) {
+            const newPar = holePars[i] !== undefined ? holePars[i] : (layout.holes[i]?.par || 3);
+            updatedHoles[i] = {
+                ...(layout.holes[i] || {}),
+                par: newPar
+            };
+        }
+        
+        // Calculate new par total
+        const parTotal = Object.values(updatedHoles).reduce((sum, hole) => sum + (hole.par || 3), 0);
+        
+        const updatedLayout: CourseLayout = {
+            ...layout,
+            holes: updatedHoles,
+            parTotal
+        };
+        
+        const updatedLayouts = {
+            ...course.layouts,
+            [layoutId]: updatedLayout
+        };
+        
+        await updateDoc(doc(db, 'courses', courseId), {
+            layouts: updatedLayouts
+        });
+    } catch (error) {
+        console.error('Error updating course layout pars:', error);
+        throw error;
+    }
+}
+
+/**
+ * Save user's custom layout (local or to database)
+ */
+export async function saveUserCustomLayout(
+    courseId: string,
+    layoutId: string,
+    customLayout: CourseLayout,
+    submitToDatabase: boolean
+): Promise<void> {
+    try {
+        // Always save to user's local course data first
+        const course = await getCourse(courseId);
+        if (!course) throw new Error('Course not found');
+        
+        // Update the course with custom layout
+        const updatedLayouts = {
+            ...course.layouts,
+            [`${layoutId}_custom`]: {
+                ...customLayout,
+                name: `${customLayout.name} (Custom)`
+            }
+        };
+        
+        await updateDoc(doc(db, 'courses', courseId), {
+            layouts: updatedLayouts
+        });
+        
+        // If submitting to database, save to custom layouts collection
+        if (submitToDatabase) {
+            await submitCustomLayout(courseId, customLayout);
+        }
+    } catch (error) {
+        console.error('Error saving user custom layout:', error);
+        throw error;
+    }
+}
+
+/**
+ * Submit custom layout to database for review
+ */
+export async function submitCustomLayout(
+    originalCourseId: string,
+    customLayout: CourseLayout
+): Promise<string> {
+    try {
+        const { auth } = await import('./firebase');
+        const userId = auth.currentUser?.uid || 'anonymous';
+        
+        const customLayoutData = {
+            originalCourseId,
+            layout: customLayout,
+            submittedBy: userId,
+            submissionDate: new Date().toISOString(),
+            status: 'pending',
+            reviewNotes: ''
+        };
+        
+        const docRef = doc(collection(db, 'userCustomLayouts'));
+        await setDoc(docRef, customLayoutData);
+        return docRef.id;
+    } catch (error) {
+        console.error('Error submitting custom layout:', error);
+        throw error;
+    }
 }
 

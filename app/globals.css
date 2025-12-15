@@ -209,3 +209,113 @@ h3 {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-light);
 }
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  /* Ensure minimum font size for readability */
+  body {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  /* Larger touch targets for mobile */
+  .btn {
+    min-height: 48px; /* Increased from 44px for easier tapping */
+    padding: 0.875rem 1.25rem;
+    font-size: 1rem;
+  }
+
+  /* Better spacing on mobile */
+  .container {
+    padding: 0.75rem;
+  }
+
+  .card {
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  /* Larger text for better readability */
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+  }
+
+  h3 {
+    font-size: 1.25rem;
+  }
+
+  /* Better input sizing for mobile */
+  .input,
+  .select {
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 0.875rem;
+    min-height: 48px;
+  }
+
+  /* Improved spacing for player cards */
+  .players-grid {
+    gap: var(--spacing-sm);
+  }
+
+  /* Better modal sizing on mobile */
+  [role="dialog"],
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    max-height: 100vh !important;
+  }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+  /* Remove hover effects on touch devices */
+  .btn:hover {
+    transform: none;
+    opacity: 1;
+  }
+
+  .card:hover {
+    box-shadow: var(--shadow-md);
+  }
+
+  /* Better tap feedback */
+  .btn:active {
+    transform: scale(0.98);
+    opacity: 0.8;
+  }
+}
+
+/* Very small screens */
+@media (max-width: 375px) {
+  .container {
+    padding: 0.5rem;
+  }
+
+  .card {
+    padding: var(--spacing-sm);
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+}
+
+/* Landscape mobile optimization */
+@media (max-width: 768px) and (orientation: landscape) {
+  .container {
+    padding: 0.5rem;
+  }
+
+  .card {
+    padding: var(--spacing-sm);
+  }
+}

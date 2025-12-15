@@ -217,3 +217,7 @@ const total = calculateRoundTotal(round, playerId);
 - **Responsive Design**: Works on all screen sizes
 - **Real-time Updates**: Stats update as rounds are added
 
+
+
+
+

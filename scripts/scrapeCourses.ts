@@ -206,3 +206,7 @@ if (require.main === module) {
 
 export { scrapeCourses, parseCourseFromHTML, fetchCoursePage };
 
+
+
+
+

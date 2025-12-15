@@ -7,21 +7,13 @@ import { useVoice } from '@/context/VoiceContext';
 import CourseSelector from '@/components/CourseSelector';
 import PlayerSelector from '@/components/PlayerSelector';
 import ActiveRound from '@/components/ActiveRound';
-import { getAllCourses, findCoursesNearLocation, Course } from '@/lib/courses';
+import InstallPrompt from '@/components/InstallPrompt';
+import { getAllCourses, findCoursesNearLocation } from '@/lib/courses';
+import { Course } from '@/types/firestore';
 
 export default function Home() {
-    // #region agent log
-    if (typeof window !== 'undefined') {
-        fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:12',message:'Home component mounting',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    }
-    // #endregion
     const [isOffline, setIsOffline] = useState(false);
     const { currentRound, startRound, isLoading, hasRecentRound, restoreRecentRound } = useGame();
-    // #region agent log
-    if (typeof window !== 'undefined') {
-        fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:14',message:'Home after useGame',data:{hasCurrentRound:!!currentRound,currentRoundStatus:currentRound?.status,isLoading,courseName:currentRound?.course?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    }
-    // #endregion
     const { startHotWordListening, isListeningForHotWord, isSupported, lastCommand, transcript } = useVoice();
     const [showCourseSelector, setShowCourseSelector] = useState(false);
     const [selectedCourse, setSelectedCourse] = useState<any>(null);
@@ -227,11 +219,6 @@ export default function Home() {
     }
 
     if (currentRound) {
-        // #region agent log
-        if (typeof window !== 'undefined') {
-            fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:144',message:'Rendering ActiveRound because currentRound exists',data:{status:currentRound.status,courseName:currentRound.course?.name,activeHole:currentRound.activeHole,hasScores:!!currentRound.scores},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        }
-        // #endregion
         return <ActiveRound />;
     }
 
@@ -248,9 +235,14 @@ export default function Home() {
                         </Link>
                     </div>
                     <h1 style={{ margin: 0 }}>Hey Caddy</h1>
-                    <Link href="/stats" style={{ fontSize: '0.875rem', color: 'var(--info)', textDecoration: 'none' }}>
-                        📈 Stats
-                    </Link>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <Link href="/stats" style={{ fontSize: '0.875rem', color: 'var(--info)', textDecoration: 'none' }}>
+                            📈 Stats
+                        </Link>
+                        <Link href="/mrtz" style={{ fontSize: '0.875rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                            💰 MRTZ
+                        </Link>
+                    </div>
                 </div>
                 {isOffline && <div suppressHydrationWarning style={{ color: 'red', marginTop: '0.5rem' }}>Offline Mode</div>}
             </header>
@@ -418,6 +410,7 @@ export default function Home() {
                     )}
                 </div>
             ) : null}
+            <InstallPrompt />
         </main>
     );
 }

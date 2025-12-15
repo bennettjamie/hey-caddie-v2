@@ -9,6 +9,10 @@ const withPWA = require('next-pwa')({
 
 const nextConfig = {
   reactStrictMode: true,
+  // Use webpack explicitly for next-pwa compatibility
+  webpack: (config, { isServer }) => {
+    return config;
+  },
 };
 
 module.exports = withPWA(nextConfig);

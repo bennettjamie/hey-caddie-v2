@@ -145,3 +145,7 @@ The app uses:
 - Check that you're on the correct hole
 - Try manual score input as backup
 
+
+
+
+

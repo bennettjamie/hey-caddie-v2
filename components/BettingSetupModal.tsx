@@ -8,46 +8,218 @@ interface BettingSetupModalProps {
 }
 
 export default function BettingSetupModal({ onClose }: BettingSetupModalProps) {
-    const { activeBets = {}, startSkins, startNassau } = useGame();
-    const [betType, setBetType] = useState<'skins' | 'nassau'>('skins');
-    const [value, setValue] = useState(0.25);
+    const { currentRound, activeBets = {}, startSkins, startNassau } = useGame();
+    const [skinsValue, setSkinsValue] = useState(activeBets?.skins?.value || 0.25);
+    const [nassauValue, setNassauValue] = useState(activeBets?.nassau?.value || 1.0);
+    const [skinsParticipants, setSkinsParticipants] = useState<string[]>([]);
+    const [nassauParticipants, setNassauParticipants] = useState<string[]>([]);
 
-    // Update default value when bet type changes
+    // Initialize participants to all players if not already set
     useEffect(() => {
-        if (betType === 'skins') {
-            // Use active bet value if available, otherwise default to 0.25
-            setValue(activeBets?.skins?.value || 0.25);
-        } else {
-            // Use active bet value if available, otherwise default to 1.0 for Nassau
-            setValue(activeBets?.nassau?.value || 1.0);
+        if (currentRound?.players) {
+            const allPlayerIds = currentRound.players.map((p: any) => p.id).filter(Boolean);
+            if (skinsParticipants.length === 0 && !activeBets?.skins?.started) {
+                setSkinsParticipants(allPlayerIds);
+            }
+            if (nassauParticipants.length === 0 && !activeBets?.nassau?.started) {
+                setNassauParticipants(allPlayerIds);
+            }
         }
-    }, [betType, activeBets?.skins?.value, activeBets?.nassau?.value]);
+    }, [currentRound, activeBets]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSkinsSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (value <= 0) {
+        if (skinsValue <= 0) {
             alert('Bet value must be greater than 0');
             return;
         }
-
-        if (betType === 'skins') {
-            if (startSkins && typeof startSkins === 'function') {
-                startSkins(value);
-            } else {
-                alert('Error: Unable to start Skins bet. Please try again.');
-                console.error('startSkins is not a function:', startSkins);
-                return;
-            }
-        } else {
-            if (startNassau && typeof startNassau === 'function') {
-                startNassau(value);
-            } else {
-                alert('Error: Unable to start Nassau bet. Please try again.');
-                console.error('startNassau is not a function:', startNassau);
-                return;
-            }
+        if (skinsParticipants.length === 0) {
+            alert('Please select at least one player for Skins');
+            return;
         }
-        onClose();
+        if (startSkins && typeof startSkins === 'function') {
+            startSkins(skinsValue, skinsParticipants);
+        } else {
+            alert('Error: Unable to start Skins bet. Please try again.');
+            console.error('startSkins is not a function:', startSkins);
+        }
+    };
+
+    const handleNassauSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (nassauValue <= 0) {
+            alert('Bet value must be greater than 0');
+            return;
+        }
+        if (nassauParticipants.length === 0) {
+            alert('Please select at least one player for Nassau');
+            return;
+        }
+        if (startNassau && typeof startNassau === 'function') {
+            startNassau(nassauValue, nassauParticipants);
+        } else {
+            alert('Error: Unable to start Nassau bet. Please try again.');
+            console.error('startNassau is not a function:', startNassau);
+        }
+    };
+
+    const togglePlayer = (playerId: string, betType: 'skins' | 'nassau') => {
+        if (betType === 'skins') {
+            setSkinsParticipants(prev => 
+                prev.includes(playerId) 
+                    ? prev.filter(id => id !== playerId)
+                    : [...prev, playerId]
+            );
+        } else {
+            setNassauParticipants(prev => 
+                prev.includes(playerId) 
+                    ? prev.filter(id => id !== playerId)
+                    : [...prev, playerId]
+            );
+        }
+    };
+
+    const renderValueStepper = (value: number, setValue: (val: number) => void, disabled: boolean) => (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '1rem',
+            marginBottom: '1rem',
+            padding: '1rem',
+            backgroundColor: 'rgba(0, 242, 96, 0.1)',
+            borderRadius: '12px',
+            border: '2px solid var(--primary)',
+            opacity: disabled ? 0.5 : 1
+        }}>
+            <button
+                type="button"
+                onClick={() => {
+                    if (!disabled) {
+                        const newValue = Math.max(0.25, value - 0.25);
+                        setValue(newValue);
+                    }
+                }}
+                disabled={disabled}
+                style={{
+                    minWidth: '60px',
+                    minHeight: '60px',
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '12px',
+                    backgroundColor: disabled ? 'var(--border)' : 'var(--primary)',
+                    color: 'white',
+                    border: 'none',
+                    fontSize: '2rem',
+                    fontWeight: 'bold',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease'
+                }}
+            >
+                −
+            </button>
+            
+            <div style={{ minWidth: '100px', textAlign: 'center' }}>
+                <div style={{
+                    fontSize: '2rem',
+                    fontWeight: 'bold',
+                    color: 'var(--primary)',
+                    lineHeight: 1.2
+                }}>
+                    {value.toFixed(2)}
+                </div>
+                <div style={{
+                    fontSize: '0.875rem',
+                    color: 'var(--text-light)',
+                    fontWeight: 500
+                }}>
+                    MRTZ
+                </div>
+            </div>
+            
+            <button
+                type="button"
+                onClick={() => {
+                    if (!disabled) {
+                        const newValue = value + 0.25;
+                        setValue(newValue);
+                    }
+                }}
+                disabled={disabled}
+                style={{
+                    minWidth: '60px',
+                    minHeight: '60px',
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '12px',
+                    backgroundColor: disabled ? 'var(--border)' : 'var(--primary)',
+                    color: 'white',
+                    border: 'none',
+                    fontSize: '2rem',
+                    fontWeight: 'bold',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease'
+                }}
+            >
+                +
+            </button>
+        </div>
+    );
+
+    const renderPlayerSelection = (participants: string[], betType: 'skins' | 'nassau', disabled: boolean) => {
+        if (!currentRound?.players) return null;
+        
+        return (
+            <div style={{
+                marginTop: '1rem',
+                padding: '0.75rem',
+                backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                borderRadius: '8px',
+                opacity: disabled ? 0.5 : 1
+            }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                    Select Participants:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {currentRound.players.map((player: any) => {
+                        const isSelected = participants.includes(player.id);
+                        return (
+                            <label
+                                key={player.id}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    cursor: disabled ? 'not-allowed' : 'pointer',
+                                    padding: '0.5rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: isSelected ? 'rgba(0, 242, 96, 0.1)' : 'transparent'
+                                }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => !disabled && togglePlayer(player.id, betType)}
+                                    disabled={disabled}
+                                    style={{
+                                        width: '20px',
+                                        height: '20px',
+                                        cursor: disabled ? 'not-allowed' : 'pointer'
+                                    }}
+                                />
+                                <span style={{ fontSize: '0.875rem' }}>{player.name}</span>
+                            </label>
+                        );
+                    })}
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -61,10 +233,12 @@ export default function BettingSetupModal({ onClose }: BettingSetupModalProps) {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            zIndex: 1000
+            zIndex: 1000,
+            padding: '1rem',
+            overflowY: 'auto'
         }}>
-            <div className="card" style={{ width: '90%', maxWidth: '500px', backgroundColor: '#1e1e1e' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div className="card" style={{ width: '100%', maxWidth: '700px', backgroundColor: '#1e1e1e', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                     <h2>Start Betting</h2>
                     <button
                         className="btn"
@@ -79,45 +253,13 @@ export default function BettingSetupModal({ onClose }: BettingSetupModalProps) {
                     </button>
                 </div>
 
-                {/* Bet Type Selection */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                    <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setBetType('skins')}
-                        style={{
-                            flex: 1,
-                            backgroundColor: betType === 'skins' ? 'var(--primary)' : 'var(--border)',
-                            opacity: activeBets?.skins?.started ? 0.6 : 1
-                        }}
-                        disabled={activeBets?.skins?.started}
-                    >
-                        Skins
-                        {activeBets?.skins?.started && ' (Active)'}
-                    </button>
-                    <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setBetType('nassau')}
-                        style={{
-                            flex: 1,
-                            backgroundColor: betType === 'nassau' ? 'var(--primary)' : 'var(--border)',
-                            opacity: activeBets?.nassau?.started ? 0.6 : 1
-                        }}
-                        disabled={activeBets?.nassau?.started}
-                    >
-                        Nassau
-                        {activeBets?.nassau?.started && ' (Active)'}
-                    </button>
-                </div>
-
                 {/* Active Bets Status */}
                 {(activeBets?.skins?.started || activeBets?.nassau?.started) && (
                     <div style={{
                         padding: '0.75rem',
                         backgroundColor: 'rgba(0, 242, 96, 0.1)',
                         borderRadius: '8px',
-                        marginBottom: '1rem',
+                        marginBottom: '1.5rem',
                         border: '1px solid var(--primary)'
                     }}>
                         <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
@@ -125,82 +267,98 @@ export default function BettingSetupModal({ onClose }: BettingSetupModalProps) {
                         </div>
                         {activeBets?.skins?.started && (
                             <div style={{ fontSize: '0.875rem' }}>
-                                Skins: {activeBets?.skins?.value || 0} MRTZ per hole
+                                ✓ Skins: {activeBets?.skins?.value || 0} MRTZ per hole
                             </div>
                         )}
                         {activeBets?.nassau?.started && (
                             <div style={{ fontSize: '0.875rem' }}>
-                                Nassau: {activeBets?.nassau?.value || 0} MRTZ per segment
+                                ✓ Nassau: {activeBets?.nassau?.value || 0} MRTZ per segment
                             </div>
                         )}
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                            Bet Value (MRTZ):
-                        </label>
-                        <input
-                            type="number"
-                            step="0.25"
-                            min="0.25"
-                            value={value}
-                            onChange={(e) => {
-                                const newValue = parseFloat(e.target.value);
-                                if (!isNaN(newValue) && newValue >= 0.25) {
-                                    setValue(newValue);
-                                }
-                            }}
-                            onBlur={(e) => {
-                                const newValue = parseFloat(e.target.value);
-                                if (isNaN(newValue) || newValue < 0.25) {
-                                    // Reset to default based on bet type
-                                    setValue(betType === 'skins' ? 0.25 : 1.0);
-                                }
-                            }}
-                            style={{
-                                width: '100%',
-                                padding: '0.75rem',
-                                fontSize: '1rem',
-                                borderRadius: '8px',
-                                border: '1px solid var(--border)',
-                                backgroundColor: 'var(--bg)',
-                                color: 'var(--text)'
-                            }}
-                            required
-                        />
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '0.25rem' }}>
-                            {betType === 'skins' 
-                                ? 'Amount per hole. Winner takes all, ties carry over.'
-                                : 'Amount per segment (Front 9, Back 9, Overall). Winner takes from all players.'}
-                        </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                    {/* Skins Section */}
+                    <div style={{
+                        padding: '1rem',
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        borderRadius: '8px',
+                        border: activeBets?.skins?.started ? '2px solid var(--success)' : '1px solid var(--border)'
+                    }}>
+                        <h3 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            Skins
+                            {activeBets?.skins?.started && <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>✓ Active</span>}
+                        </h3>
+                        <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', marginBottom: '1rem' }}>
+                            Amount per hole. Winner takes all, ties carry over.
+                        </p>
+                        
+                        <form onSubmit={handleSkinsSubmit}>
+                            {renderValueStepper(skinsValue, setSkinsValue, activeBets?.skins?.started || false)}
+                            {renderPlayerSelection(skinsParticipants, 'skins', activeBets?.skins?.started || false)}
+                            
+                            <button
+                                type="submit"
+                                className="btn"
+                                style={{
+                                    width: '100%',
+                                    backgroundColor: activeBets?.skins?.started ? 'var(--border)' : 'var(--success)',
+                                    marginTop: '1rem'
+                                }}
+                                disabled={activeBets?.skins?.started}
+                            >
+                                {activeBets?.skins?.started ? 'Already Active' : 'Start Skins'}
+                            </button>
+                        </form>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                        <button
-                            type="button"
-                            className="btn"
-                            onClick={onClose}
-                            style={{ flex: 1, backgroundColor: 'var(--border)' }}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            className="btn"
-                            style={{ flex: 1, backgroundColor: 'var(--success)' }}
-                            disabled={
-                                (betType === 'skins' && activeBets?.skins?.started) ||
-                                (betType === 'nassau' && activeBets?.nassau?.started)
-                            }
-                        >
-                            Start {betType === 'skins' ? 'Skins' : 'Nassau'}
-                        </button>
+                    {/* Nassau Section */}
+                    <div style={{
+                        padding: '1rem',
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        borderRadius: '8px',
+                        border: activeBets?.nassau?.started ? '2px solid var(--success)' : '1px solid var(--border)'
+                    }}>
+                        <h3 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            Nassau
+                            {activeBets?.nassau?.started && <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>✓ Active</span>}
+                        </h3>
+                        <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', marginBottom: '1rem' }}>
+                            Amount per segment (Front 9, Back 9, Overall). Winner takes from all players.
+                        </p>
+                        
+                        <form onSubmit={handleNassauSubmit}>
+                            {renderValueStepper(nassauValue, setNassauValue, activeBets?.nassau?.started || false)}
+                            {renderPlayerSelection(nassauParticipants, 'nassau', activeBets?.nassau?.started || false)}
+                            
+                            <button
+                                type="submit"
+                                className="btn"
+                                style={{
+                                    width: '100%',
+                                    backgroundColor: activeBets?.nassau?.started ? 'var(--border)' : 'var(--success)',
+                                    marginTop: '1rem'
+                                }}
+                                disabled={activeBets?.nassau?.started}
+                            >
+                                {activeBets?.nassau?.started ? 'Already Active' : 'Start Nassau'}
+                            </button>
+                        </form>
                     </div>
-                </form>
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                    <button
+                        type="button"
+                        className="btn"
+                        onClick={onClose}
+                        style={{ flex: 1, backgroundColor: (activeBets?.skins?.started || activeBets?.nassau?.started) ? 'var(--success)' : 'var(--border)' }}
+                    >
+                        {(activeBets?.skins?.started || activeBets?.nassau?.started) ? 'Done' : 'Cancel'}
+                    </button>
+                </div>
             </div>
         </div>
     );
 }
-
