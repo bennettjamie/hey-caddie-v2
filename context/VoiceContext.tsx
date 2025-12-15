@@ -524,5 +524,7 @@ declare global {
         SpeechRecognition: any;
         webkitSpeechRecognition: any;
         __updateVoiceGameState?: (state: any) => void;
+        __pendingRoundResolution?: import('@/types/game').RoundResolution;
+        __roundSettlement?: { settledIRL?: boolean };
     }
 }

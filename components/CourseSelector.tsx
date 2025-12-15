@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getAllCourses, getLocalCourses, searchCourses, createCourse, Course } from '@/lib/courses';
+import { getAllCourses, getLocalCourses, searchCourses, createCourse } from '@/lib/courses';
 import { saveLocalCourses } from '@/lib/courses';
 import CourseParSetup from './CourseParSetup';
+import { Course } from '@/types/firestore';
 
-export default function CourseSelector({ onSelect }: { onSelect: (course: any) => void }) {
+export default function CourseSelector({ onSelect }: { onSelect: (course: Course) => void }) {
     const [courses, setCourses] = useState<Course[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
@@ -349,7 +350,6 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: any) =
                                                     onClick={() =>
                                                         onSelect({
                                                             ...course,
-                                                            selectedLayout: layoutName,
                                                             selectedLayoutKey: layoutKey
                                                         })
                                                     }
@@ -363,7 +363,7 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: any) =
                                     <button
                                         className="btn"
                                         style={{ marginTop: '1rem', backgroundColor: 'var(--info)' }}
-                                        onClick={() => onSelect({ ...course, selectedLayout: 'Default' })}
+                                        onClick={() => onSelect({ ...course, selectedLayoutKey: 'default' })}
                                     >
                                         Select Course
                                     </button>
@@ -385,7 +385,6 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: any) =
                         const layout = newlyCreatedCourse.layouts?.[layoutKey];
                         onSelect({
                             ...newlyCreatedCourse,
-                            selectedLayout: layout?.name || 'Main',
                             selectedLayoutKey: layoutKey
                         });
                         setNewlyCreatedCourse(null);

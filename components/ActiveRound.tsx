@@ -20,6 +20,9 @@ import RoundReviewModal from '@/components/RoundReviewModal';
 import BetSummaryReviewModal from '@/components/BetSummaryReviewModal';
 import SettlementModal from '@/components/SettlementModal';
 import Fuse from 'fuse.js';
+import { FinalRoundData, RoundResolution } from '@/types/game';
+import { Player } from '@/lib/players';
+import { FundatoryBet } from '@/lib/betting';
 
 export default function ActiveRound() {
     const { 
@@ -79,7 +82,7 @@ export default function ActiveRound() {
     // Ensure teeOrder is initialized if missing when round exists
     useEffect(() => {
         if (currentRound && currentRound.players && (!teeOrder || teeOrder.length === 0)) {
-            const playerIds = currentRound.players.map((p: any) => p.id).filter(Boolean);
+            const playerIds = currentRound.players.map((p: Player) => p.id).filter(Boolean);
             if (playerIds.length > 0 && setTeeOrder && typeof setTeeOrder === 'function') {
                 setTeeOrder(playerIds);
             }
@@ -157,13 +160,13 @@ export default function ActiveRound() {
         if (!currentRound?.players) return null;
 
         // Exact match first
-        const exactMatch = currentRound.players.find((p: any) =>
+        const exactMatch = currentRound.players.find((p: Player) =>
             p.name.toLowerCase() === name.toLowerCase()
         );
         if (exactMatch) return exactMatch;
 
         // Partial match
-        const partialMatch = currentRound.players.find((p: any) =>
+        const partialMatch = currentRound.players.find((p: Player) =>
             p.name.toLowerCase().includes(name.toLowerCase()) ||
             name.toLowerCase().includes(p.name.toLowerCase())
         );
@@ -213,7 +216,7 @@ export default function ActiveRound() {
             if (player) {
                 // Find pending fundatory bet for this player on current hole
                 const pendingBet = fundatoryBets.find(
-                    (bet: any) =>
+                    (bet: FundatoryBet) =>
                         bet.status === 'pending' &&
                         bet.targetId === player.id &&
                         bet.holeNumber === activeHole
@@ -319,10 +322,10 @@ export default function ActiveRound() {
     };
 
     // Handle end round with resolution
-    const handleEndRoundWithResolution = async (resolution: any) => {
+    const handleEndRoundWithResolution = async (resolution: RoundResolution) => {
         // Store resolution in a way that endRound can access it
         if (typeof window !== 'undefined') {
-            (window as any).__pendingRoundResolution = resolution;
+            window.__pendingRoundResolution = resolution;
         }
         const finalData = await endRound();
         setFinalRoundData(finalData);
@@ -387,8 +390,7 @@ export default function ActiveRound() {
                         }}>
                             Par {(() => {
                                 const layoutKey = currentRound.course.selectedLayoutKey || 'default';
-                                return currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole]?.par || 
-                                       currentRound.course.holes?.[activeHole - 1]?.par || 3;
+                                return currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole]?.par || 3;
                             })()}
                         </p>
                     </div>
@@ -505,10 +507,9 @@ export default function ActiveRound() {
             </div>
 
             <div className="players-grid">
-                    {currentRound.players.map((player: any) => {
+                    {currentRound.players.map((player: Player) => {
                         const layoutKey = currentRound.course.selectedLayoutKey || 'default';
-                        const par = currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole]?.par || 
-                                   currentRound.course.holes?.[activeHole - 1]?.par || 3;
+                        const par = currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole]?.par || 3;
                         const relativeScore = currentRound.scores[activeHole]?.[player.id] ?? null;
                         const absoluteScore = relativeScore !== null ? par + relativeScore : null;
                         
@@ -670,18 +671,22 @@ export default function ActiveRound() {
                         setShowBetSummary(false);
                         // Calculate MRTZ totals for settlement
                         const { calculateRoundMRTZ } = require('@/lib/mrtz');
-                        const playerIds = currentRound.players.map((p: any) => p.id);
+                        const playerIds = currentRound.players.map((p: Player) => p.id);
+                        const skinEntries = finalRoundData.bets?.skins ? Object.entries(finalRoundData.bets.skins) : [];
+                        const firstSkinValue = skinEntries.length > 0 && skinEntries[0][1] ? skinEntries[0][1].value : 0;
                         const finalBets = finalRoundData.bets ? {
-                            skins: finalRoundData.bets.skins ? { started: true, value: (Object.values(finalRoundData.bets.skins)[0] as any)?.value || 0 } : undefined,
-                            nassau: finalRoundData.bets.nassau ? { started: true, value: (finalRoundData.bets.nassau as any)?.value || 0 } : undefined
+                            skins: finalRoundData.bets.skins && skinEntries.length > 0
+                                ? { started: true, value: firstSkinValue } 
+                                : undefined,
+                            nassau: finalRoundData.bets.nassau ? { started: true, value: 0 } : undefined
                         } : activeBets;
                         const mrtzTotals = calculateRoundMRTZ(
-                            { ...currentRound, players: playerIds } as any,
+                            { ...currentRound, players: playerIds },
                             finalBets,
                             finalRoundData.bets?.fundatory || fundatoryBets
                         );
                         const playerNames: { [key: string]: string } = {};
-                        currentRound.players.forEach((p: any) => {
+                        currentRound.players.forEach((p: Player) => {
                             playerNames[p.id] = p.name;
                         });
                         setShowSettlement(true);
@@ -699,26 +704,30 @@ export default function ActiveRound() {
                         setShowSettlement(false);
                         // Store settlement info
                         if (typeof window !== 'undefined') {
-                            (window as any).__roundSettlement = { settledIRL };
+                            window.__roundSettlement = { settledIRL };
                         }
                         setShowFinalSummary(true);
                     }}
                     mrtzTotals={(() => {
                         const { calculateRoundMRTZ } = require('@/lib/mrtz');
-                        const playerIds = currentRound.players.map((p: any) => p.id);
+                        const playerIds = currentRound.players.map((p: Player) => p.id);
+                        const skinEntries = finalRoundData.bets?.skins ? Object.entries(finalRoundData.bets.skins) : [];
+                        const firstSkinValue = skinEntries.length > 0 && skinEntries[0][1] ? skinEntries[0][1].value : 0;
                         const finalBets = finalRoundData.bets ? {
-                            skins: finalRoundData.bets.skins ? { started: true, value: (Object.values(finalRoundData.bets.skins)[0] as any)?.value || 0 } : undefined,
-                            nassau: finalRoundData.bets.nassau ? { started: true, value: (finalRoundData.bets.nassau as any)?.value || 0 } : undefined
+                            skins: finalRoundData.bets.skins && skinEntries.length > 0
+                                ? { started: true, value: firstSkinValue } 
+                                : undefined,
+                            nassau: finalRoundData.bets.nassau ? { started: true, value: 0 } : undefined
                         } : activeBets;
                         return calculateRoundMRTZ(
-                            { ...currentRound, players: playerIds } as any,
+                            { ...currentRound, players: playerIds },
                             finalBets,
                             finalRoundData.bets?.fundatory || fundatoryBets
                         );
                     })()}
                     playerNames={(() => {
                         const names: { [key: string]: string } = {};
-                        currentRound.players.forEach((p: any) => {
+                        currentRound.players.forEach((p: Player) => {
                             names[p.id] = p.name;
                         });
                         return names;

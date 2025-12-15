@@ -47,11 +47,12 @@ export default function CourseImporter() {
                     errors: [{ course: 'Import', error: data.error }]
                 });
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Invalid JSON';
             setResult({
                 success: 0,
                 failed: 1,
-                errors: [{ course: 'Parse Error', error: error.message || 'Invalid JSON' }]
+                errors: [{ course: 'Parse Error', error: errorMessage }]
             });
         } finally {
             setImporting(false);
