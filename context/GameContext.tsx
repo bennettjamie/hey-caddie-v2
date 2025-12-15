@@ -6,18 +6,30 @@ import { saveRound, convertGameRoundToFirestore, saveLocalRound } from '@/lib/ro
 import { calculateRoundMRTZ, updatePlayerMRTZ } from '@/lib/mrtz';
 import { createRoundLedgerEntries } from '@/lib/mrtzLedger';
 import { createCarryOver } from '@/lib/mrtzCarryOvers';
+import { GameRound, FinalRoundData, CachedRound, RoundResolution } from '@/types/game';
+import { Course } from '@/types/firestore';
+import { Player } from '@/lib/players';
+import { PlayerMRTZSummary, OutstandingBalance, MRTZLedgerEntry } from '@/types/mrtz';
+import { NassauResult } from '@/lib/betting';
 
 // Only restore rounds that started within the last 30 minutes
 const MAX_ROUND_AGE_MINUTES = 30;
 
+interface LedgerOptions {
+    limit?: number;
+    startAfter?: unknown;
+    type?: string;
+    status?: string;
+}
+
 interface GameContextType {
-    currentRound: any;
-    players: any[];
-    course: any;
+    currentRound: GameRound | null;
+    players: Player[];
+    course: Course | null;
     activeHole: number;
     teeOrder: string[]; // Array of player IDs in tee order
     currentTeeIndex: number; // Index of current player in tee order
-    startRound: (selectedCourse: any, selectedPlayers: any[]) => void;
+    startRound: (selectedCourse: Course, selectedPlayers: Player[]) => void;
     updateScore: (playerId: string, holeNumber: number, score: number) => void;
     setActiveHole: (hole: number) => void;
     nextTee: () => void; // Move to next player in tee order
@@ -32,26 +44,26 @@ interface GameContextType {
     startSkins: (value: number, participants?: string[]) => void;
     startNassau: (value: number, participants?: string[]) => void;
     clearBets: () => void;
-    endRound: () => Promise<any>; // Returns final round data
+    endRound: () => Promise<FinalRoundData>;
     isLoading: boolean;
     updateCourseLayout: (layoutId: string, holePars: { [holeNumber: number]: number }) => void;
     hasRecentRound: () => boolean;
     restoreRecentRound: () => void;
-    addPlayerToRound: (player: any) => void;
+    addPlayerToRound: (player: Player) => void;
     removePlayerFromRound: (playerId: string) => void;
-    getCachedRounds: () => Array<{timestamp: string, round: any, courseName: string, holesPlayed: number}>;
+    getCachedRounds: () => CachedRound[];
     restoreCachedRound: (timestamp: string) => void;
     // MRTZ Ledger functions
-    getPlayerMRTZBalance: (playerId: string) => Promise<any>;
-    getPlayerLedger: (playerId: string, options?: any) => Promise<any[]>;
-    getOutstandingBalances: (playerId: string) => Promise<any>;
+    getPlayerMRTZBalance: (playerId: string) => Promise<PlayerMRTZSummary | null>;
+    getPlayerLedger: (playerId: string, options?: LedgerOptions) => Promise<MRTZLedgerEntry[]>;
+    getOutstandingBalances: (playerId: string) => Promise<{ owedToMe: OutstandingBalance[]; iOwe: OutstandingBalance[] }>;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
 
 export function GameProvider({ children }: { children: ReactNode }) {
     // Consolidated state: everything round-related is in currentRound
-    const [currentRound, setCurrentRound] = useState<any>(null);
+    const [currentRound, setCurrentRound] = useState<GameRound | null>(null);
     const [fundatoryBets, setFundatoryBets] = useState<FundatoryBet[]>([]);
     const [activeBets, setActiveBets] = useState<{
         skins?: { value: number; started: boolean; participants?: string[] };
@@ -167,9 +179,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
     }, [activeBets]);
 
-    const startRound = (selectedCourse: any, selectedPlayers: any[]) => {
+    const startRound = (selectedCourse: Course, selectedPlayers: Player[]) => {
         // Initialize tee order with player IDs (default order)
-        const playerIds = selectedPlayers.map((p: any) => p.id).filter(Boolean);
+        const playerIds = selectedPlayers.map((p: Player) => p.id).filter(Boolean);
         if (playerIds.length === 0) {
             console.error('No valid player IDs found when starting round');
             return;
@@ -189,7 +201,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     };
 
     const updateScore = useCallback((playerId: string, holeNumber: number, score: number) => {
-        setCurrentRound((prev: any) => {
+        setCurrentRound((prev: GameRound | null) => {
             if (!prev) {
                 console.warn('Cannot update score: no active round');
                 return prev;
@@ -217,7 +229,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 
                 if (previousHoleScores && Object.keys(previousHoleScores).length > 0) {
                     // Calculate tee order based on scores (lowest score first)
-                    const playerIds = prev.players.map((p: any) => p.id).filter(Boolean);
+                    const playerIds = prev.players.map((p: Player) => p.id).filter(Boolean);
                     updatedTeeOrder = [...playerIds].sort((a, b) => {
                         const scoreA = previousHoleScores[a] ?? 999; // Default high score if no score
                         const scoreB = previousHoleScores[b] ?? 999;
@@ -256,7 +268,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             console.warn('setTeeOrder called with non-array:', order);
             return;
         }
-        setCurrentRound((prev: any) => {
+        setCurrentRound((prev: GameRound | null) => {
             if (!prev) return prev;
             return {
                 ...prev,
@@ -316,16 +328,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 
                 // Create player names map for denormalization
                 const playerNames: { [key: string]: string } = {};
-                currentRound.players.forEach((p: any) => {
+                currentRound.players.forEach((p: Player) => {
                     playerNames[p.id] = p.name;
                 });
                 
                 // Calculate final betting results
                 const holes = Array.from({ length: 18 }, (_, i) => i + 1);
-                const playerIds = currentRound.players.map((p: any) => p.id);
+                const playerIds = currentRound.players.map((p: Player) => p.id);
                 
-                let skinsResults: any = {};
-                let nassauResults: any = null;
+                let skinsResults: { [holeNumber: number]: {
+                    winnerId?: string;
+                    value: number;
+                    carryOver: boolean;
+                    push?: boolean;
+                    tiedPlayers?: string[];
+                } } = {};
+                let nassauResults: NassauResult | null = null;
                 
                 if (activeBets.skins?.started) {
                     const skins = calculateSkins(currentRound.scores, holes, activeBets.skins.value, activeBets.skins.participants);
@@ -513,8 +531,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         roundMRTZ,
                         activeBets,
                         fundatoryBets,
-                        players.map((p: any) => ({ id: p.id, name: p.name })),
-                        players[0]?.id || 'system' // Use first player as creator, or 'system'
+                        currentRound.players.map((p: Player) => ({ id: p.id, name: p.name })),
+                        currentRound.players[0]?.id || 'system' // Use first player as creator, or 'system'
                     );
                     
                     // If not settled IRL, transactions are created but marked as pending
@@ -683,7 +701,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         mrtzResults: roundMRTZ
                     },
                     finalScores: Object.fromEntries(
-                        currentRound.players.map((p: any) => {
+                        currentRound.players.map((p: Player) => {
                             let total = 0;
                             for (let i = 1; i <= 18; i++) {
                                 const score = currentRound.scores[i]?.[p.id];
@@ -735,7 +753,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 });
                 
                 // Keep only last 50 cached rounds
-                const sorted = cachedRounds.sort((a: any, b: any) => 
+                const sorted = cachedRounds.sort((a: CachedRound, b: CachedRound) => 
                     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
                 ).slice(0, 50);
                 
@@ -815,11 +833,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     
                     if (!isNaN(startTime.getTime()) && minutesSinceStart <= MAX_ROUND_AGE_MINUTES) {
                         // Ensure all round properties are set
-                        const restoredRound: any = {
+                        const restoredRound: GameRound = {
                             ...parsed,
                             status: 'active',
                             activeHole: parsed.activeHole ?? 1,
-                            teeOrder: parsed.teeOrder || (parsed.players ? parsed.players.map((p: any) => p.id || p.uid).filter(Boolean) : []),
+                            teeOrder: parsed.teeOrder || (parsed.players ? parsed.players.map((p: Player) => p.id || (p as any).uid).filter(Boolean) : []),
                             currentTeeIndex: parsed.currentTeeIndex ?? 0
                         };
                         setCurrentRound(restoredRound);
@@ -861,9 +879,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const removePlayerFromRound = useCallback((playerId: string) => {
-        setCurrentRound((prev: any) => {
+        setCurrentRound((prev: GameRound | null) => {
             if (!prev) return prev;
-            const updatedPlayers = prev.players.filter((p: any) => p.id !== playerId);
+            const updatedPlayers = prev.players.filter((p: Player) => p.id !== playerId);
             return {
                 ...prev,
                 players: updatedPlayers,
@@ -903,14 +921,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
             const cached = localStorage.getItem('cachedRounds');
             if (!cached) return;
             const cachedRounds = JSON.parse(cached);
-            const roundData = cachedRounds.find((item: any) => item.timestamp === timestamp);
+            const roundData = cachedRounds.find((item: CachedRound) => item.timestamp === timestamp);
             if (roundData && roundData.round) {
                 const parsed = roundData.round;
-                const restoredRound: any = {
+                const restoredRound: GameRound = {
                     ...parsed,
                     status: 'active',
                     activeHole: parsed.activeHole ?? 1,
-                    teeOrder: parsed.teeOrder || (parsed.players ? parsed.players.map((p: any) => p.id || p.uid).filter(Boolean) : []),
+                    teeOrder: parsed.teeOrder || (parsed.players ? parsed.players.map((p: Player) => p.id || (p as any).uid).filter(Boolean) : []),
                     currentTeeIndex: parsed.currentTeeIndex ?? 0
                 };
                 setCurrentRound(restoredRound);
@@ -971,15 +989,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
         getCachedRounds,
         restoreCachedRound,
         // MRTZ Ledger functions
-        getPlayerMRTZBalance: async (playerId: string) => {
+        getPlayerMRTZBalance: async (playerId: string): Promise<PlayerMRTZSummary> => {
             const { getPlayerBalance: getBalance } = await import('@/lib/mrtzLedger');
             return getBalance(playerId);
         },
-        getPlayerLedger: async (playerId: string, options?: any) => {
+        getPlayerLedger: async (playerId: string, options?: LedgerOptions): Promise<MRTZLedgerEntry[]> => {
             const { getPlayerLedger: getLedger } = await import('@/lib/mrtzLedger');
             return getLedger(playerId, options);
         },
-        getOutstandingBalances: async (playerId: string) => {
+        getOutstandingBalances: async (playerId: string): Promise<{ owedToMe: OutstandingBalance[]; iOwe: OutstandingBalance[] }> => {
             const { getOutstandingBalances: getBalances } = await import('@/lib/mrtzLedger');
             return getBalances(playerId);
         }

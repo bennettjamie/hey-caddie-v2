@@ -32,8 +32,8 @@ export interface Player {
         bestCourse?: string;
     };
     mrtzBalance?: number; // Current MRTZ balance
-    createdAt?: any;
-    updatedAt?: any;
+    createdAt?: Timestamp | Date;
+    updatedAt?: Timestamp | Date;
 }
 
 const PLAYERS_COLLECTION = 'players';

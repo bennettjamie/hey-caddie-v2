@@ -36,6 +36,7 @@ export interface Course {
     layouts: {
         [layoutId: string]: CourseLayout;
     };
+    selectedLayoutKey?: string; // Currently selected layout for active round
     images?: string[]; // Array of image URLs
     amenities?: string[]; // e.g., ['Restrooms', 'Parking', 'Water']
     createdAt?: string;
@@ -57,6 +58,10 @@ export interface HoleInfo {
     imageUrl?: string;
 }
 
+import { Timestamp } from 'firebase/firestore';
+import { NassauResult } from '@/lib/betting';
+import { FundatoryBet } from '@/lib/betting';
+
 export interface Round {
     id: string;
     courseId: string;
@@ -76,13 +81,13 @@ export interface Round {
                 carryOver: boolean;
             };
         };
-        nassau?: any;
-        fundatory?: any[];
+        nassau?: NassauResult | null;
+        fundatory?: FundatoryBet[];
         // Add other bet types here
     };
     status: 'active' | 'completed' | 'partial';
-    createdAt?: any; // Firestore Timestamp
-    updatedAt?: any; // Firestore Timestamp
+    createdAt?: Timestamp | Date;
+    updatedAt?: Timestamp | Date;
     // Additional metadata
     courseName?: string; // Denormalized for easier display
     layoutName?: string; // Denormalized for easier display

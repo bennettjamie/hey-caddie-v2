@@ -167,13 +167,13 @@ export async function updateRound(roundId: string, updates: Partial<Round>): Pro
  * Convert round data from game format to Firestore format
  */
 export function convertGameRoundToFirestore(
-    gameRound: any,
+    gameRound: GameRound,
     courseId: string,
     layoutId: string,
     status: 'completed' | 'partial' = 'completed'
 ): Omit<Round, 'id'> {
     // Extract player IDs from game round
-    const playerIds = gameRound.players?.map((p: any) => p.id || p.uid) || [];
+    const playerIds = gameRound.players?.map((p: Player) => p.id || (p as any).uid) || [];
     
     return {
         courseId,
