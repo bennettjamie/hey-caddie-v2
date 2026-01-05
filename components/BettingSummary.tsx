@@ -135,12 +135,12 @@ export default function BettingSummary() {
                                                             <span>
                                                                 Hole {s.holeNumber}: {isCurrentHole && '👈 '}
                                                                 {s.winnerId ? (
-                                                                    <span style={{ color: 'var(--success)' }}>
-                                                                        {currentRound.players.find((p: any) => p.id === s.winnerId)?.name} won {s.value.toFixed(2)} MRTZ
+                                                                    <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>
+                                                                        {currentRound.players.find((p: any) => p.id === s.winnerId)?.name} Won Pot ({s.value.toFixed(2)} MRTZ)
                                                                     </span>
                                                                 ) : (
-                                                                    <span style={{ color: 'var(--warning)' }}>
-                                                                        Push ({s.value.toFixed(2)} MRTZ carried over)
+                                                                    <span style={{ color: 'var(--text-light)', fontStyle: 'italic' }}>
+                                                                        Push (Pot: {s.value.toFixed(2)} MRTZ)
                                                                     </span>
                                                                 )}
                                                             </span>

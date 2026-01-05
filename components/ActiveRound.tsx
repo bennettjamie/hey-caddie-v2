@@ -571,9 +571,11 @@ export default function ActiveRound() {
                 left: 0,
                 right: 0,
                 padding: '1rem',
+                paddingBottom: 'max(1rem, env(safe-area-inset-bottom))', // Safe area for mobile
                 backgroundColor: 'var(--background)',
                 borderTop: '2px solid var(--border)',
-                zIndex: 100
+                zIndex: 2000, // Higher than other elements to ensure clickability
+                boxShadow: '0 -4px 12px rgba(0,0,0,0.2)'
             }}>
                 <button
                     className="btn"
@@ -583,7 +585,9 @@ export default function ActiveRound() {
                         backgroundColor: 'var(--info)',
                         padding: '1rem',
                         fontSize: '1rem',
-                        fontWeight: 600
+                        fontWeight: 600,
+                        minHeight: '50px', // Ensure large touch target
+                        cursor: 'pointer'
                     }}
                 >
                     ⚙️ Settings

@@ -25,7 +25,7 @@ export default function CourseAmendmentModal({
     useEffect(() => {
         const layout = course.layouts?.[layoutId];
         const pars: { [holeNumber: number]: number } = {};
-        
+
         if (layout?.holes) {
             // Get pars from layout
             for (let i = 1; i <= 18; i++) {
@@ -37,7 +37,7 @@ export default function CourseAmendmentModal({
                 pars[i] = 3;
             }
         }
-        
+
         setHolePars(pars);
     }, [course, layoutId]);
 
@@ -57,7 +57,7 @@ export default function CourseAmendmentModal({
     const handleSave = async () => {
         setSaving(true);
         setError(null);
-        
+
         try {
             await onSave(holePars, submitToDatabase);
             onClose();
@@ -151,23 +151,61 @@ export default function CourseAmendmentModal({
                             }}>
                                 Hole {holeNumber}
                             </label>
-                            <input
-                                type="number"
-                                min="2"
-                                max="6"
-                                value={holePars[holeNumber] || 3}
-                                onChange={(e) => handleParChange(holeNumber, e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '0.5rem',
-                                    fontSize: '1rem',
-                                    borderRadius: '8px',
-                                    border: '1px solid var(--border)',
-                                    backgroundColor: 'var(--bg)',
-                                    color: 'var(--text)',
-                                    textAlign: 'center'
-                                }}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <button
+                                    onClick={() => handleParChange(holeNumber, ((holePars[holeNumber] || 3) - 1).toString())}
+                                    style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--border)',
+                                        backgroundColor: 'var(--bg)',
+                                        color: 'var(--text)',
+                                        fontSize: '1.25rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        padding: 0
+                                    }}
+                                >
+                                    -
+                                </button>
+                                <div
+                                    style={{
+                                        flex: 1,
+                                        height: '32px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '1.25rem',
+                                        fontWeight: 'bold',
+                                        backgroundColor: 'rgba(0,0,0,0.2)',
+                                        borderRadius: '6px'
+                                    }}
+                                >
+                                    {holePars[holeNumber] || 3}
+                                </div>
+                                <button
+                                    onClick={() => handleParChange(holeNumber, ((holePars[holeNumber] || 3) + 1).toString())}
+                                    style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--border)',
+                                        backgroundColor: 'var(--bg)',
+                                        color: 'var(--text)',
+                                        fontSize: '1.25rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        padding: 0
+                                    }}
+                                >
+                                    +
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
