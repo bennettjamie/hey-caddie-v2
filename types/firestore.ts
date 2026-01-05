@@ -83,6 +83,7 @@ export interface Round {
         };
         nassau?: NassauResult | null;
         fundatory?: FundatoryBet[];
+        mrtzResults?: { [playerId: string]: number };
         // Add other bet types here
     };
     status: 'active' | 'completed' | 'partial';

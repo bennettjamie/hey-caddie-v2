@@ -11,10 +11,12 @@ import GoodDeedValidation from '@/components/GoodDeedValidation';
 import { getPlayerBalance } from '@/lib/mrtzLedger';
 import { getActiveCarryOvers } from '@/lib/mrtzCarryOvers';
 
+import HistoryView from '@/components/HistoryView';
+
 export default function MRTZPage() {
     const { players } = useGame();
     const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
-    const [activeTab, setActiveTab] = useState<'ledger' | 'balances' | 'settlements' | 'good_deeds' | 'validations' | 'carryovers'>('ledger');
+    const [activeTab, setActiveTab] = useState<'ledger' | 'balances' | 'settlements' | 'good_deeds' | 'validations' | 'carryovers' | 'history'>('ledger');
     const [balance, setBalance] = useState<any>(null);
     const [activeCarryOvers, setActiveCarryOvers] = useState<any[]>([]);
 
@@ -32,7 +34,7 @@ export default function MRTZPage() {
 
     const loadPlayerData = async () => {
         if (!selectedPlayerId) return;
-        
+
         try {
             const [balanceData, carryOvers] = await Promise.all([
                 getPlayerBalance(selectedPlayerId),
@@ -52,6 +54,9 @@ export default function MRTZPage() {
                 <p style={{ color: 'var(--text-light)', marginTop: '1rem' }}>
                     No players found. Please start a round first.
                 </p>
+                <div style={{ marginTop: '2rem' }}>
+                    <HistoryView />
+                </div>
             </div>
         );
     }
@@ -62,11 +67,11 @@ export default function MRTZPage() {
         <div className="container" style={{ padding: '1rem', paddingBottom: '5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h1 style={{ margin: 0 }}>MRTZ Ledger & Settlement</h1>
-                <Link 
-                    href="/" 
-                    style={{ 
-                        fontSize: '0.875rem', 
-                        color: 'var(--info)', 
+                <Link
+                    href="/"
+                    style={{
+                        fontSize: '0.875rem',
+                        color: 'var(--info)',
                         textDecoration: 'none',
                         padding: '0.5rem 1rem',
                         backgroundColor: 'var(--border)',
@@ -77,34 +82,36 @@ export default function MRTZPage() {
                 </Link>
             </div>
 
-            {/* Player Selector */}
-            <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                    Select Player:
-                </label>
-                <select
-                    value={selectedPlayerId}
-                    onChange={(e) => setSelectedPlayerId(e.target.value)}
-                    style={{
-                        width: '100%',
-                        padding: '0.75rem',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border)',
-                        backgroundColor: 'var(--bg)',
-                        color: 'var(--text)',
-                        fontSize: '1rem'
-                    }}
-                >
-                    {players.map(player => (
-                        <option key={player.id} value={player.id}>
-                            {player.name}
-                        </option>
-                    ))}
-                </select>
-            </div>
+            {/* Player Selector - Hide if in History mode */}
+            {activeTab !== 'history' && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+                        Select Player:
+                    </label>
+                    <select
+                        value={selectedPlayerId}
+                        onChange={(e) => setSelectedPlayerId(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border)',
+                            backgroundColor: 'var(--bg)',
+                            color: 'var(--text)',
+                            fontSize: '1rem'
+                        }}
+                    >
+                        {players.map(player => (
+                            <option key={player.id} value={player.id}>
+                                {player.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
-            {/* Balance Summary */}
-            {balance && (
+            {/* Balance Summary - Hide if in History mode */}
+            {activeTab !== 'history' && balance && (
                 <div className="card" style={{
                     padding: '1.5rem',
                     backgroundColor: 'rgba(0, 242, 96, 0.1)',
@@ -150,7 +157,7 @@ export default function MRTZPage() {
             )}
 
             {/* Active Carry-Overs */}
-            {activeCarryOvers.length > 0 && (
+            {activeTab !== 'history' && activeCarryOvers.length > 0 && (
                 <div className="card" style={{ marginBottom: '1.5rem' }}>
                     <h3 style={{ marginBottom: '1rem' }}>Active Carry-Overs</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -190,7 +197,7 @@ export default function MRTZPage() {
 
             {/* Tabs */}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-                {(['ledger', 'balances', 'settlements', 'good_deeds', 'validations', 'carryovers'] as const).map(tab => (
+                {(['ledger', 'balances', 'settlements', 'good_deeds', 'validations', 'carryovers', 'history'] as const).map(tab => (
                     <button
                         key={tab}
                         className="btn"
@@ -218,7 +225,7 @@ export default function MRTZPage() {
                     <SettlementManager playerId={selectedPlayerId} />
                 )}
                 {activeTab === 'good_deeds' && selectedPlayerId && (
-                    <GoodDeedSubmission 
+                    <GoodDeedSubmission
                         playerId={selectedPlayerId}
                         onSuccess={loadPlayerData}
                     />
@@ -240,8 +247,12 @@ export default function MRTZPage() {
                         )}
                     </div>
                 )}
+                {activeTab === 'history' && (
+                    <HistoryView />
+                )}
             </div>
         </div>
     );
 }
+
 

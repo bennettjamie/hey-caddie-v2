@@ -32,15 +32,15 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     const [showAmendmentModal, setShowAmendmentModal] = useState(false);
     const [showBettingModal, setShowBettingModal] = useState(false);
     const [showEndRoundModal, setShowEndRoundModal] = useState(false);
-    
+
     // Player management
     const [playerSearch, setPlayerSearch] = useState('');
     const [playerSuggestions, setPlayerSuggestions] = useState<Player[]>([]);
     const [allPlayers, setAllPlayers] = useState<Player[]>([]);
     const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
-    
+
     // Cached rounds
-    const [cachedRounds, setCachedRounds] = useState<Array<{timestamp: string, round: any, courseName: string, holesPlayed: number}>>([]);
+    const [cachedRounds, setCachedRounds] = useState<Array<{ timestamp: string, round: any, courseName: string, holesPlayed: number }>>([]);
 
     // Load players for search
     useEffect(() => {
@@ -87,7 +87,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
     const handleAddPlayer = async (playerName: string) => {
         if (!playerName.trim()) return;
-        
+
         try {
             const player = await getOrCreatePlayerByName(playerName.trim());
             addPlayerToRound({
@@ -496,13 +496,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     onSave={async (holePars, submitToDatabase) => {
                         const layoutId = currentRound.course.selectedLayoutKey || 'default';
                         const courseId = currentRound.course.id || currentRound.course.name;
-                        
+
                         updateCourseLayout(layoutId, holePars);
-                        
+
                         try {
                             const { updateCourseLayoutPars, saveUserCustomLayout } = await import('@/lib/courses');
                             await updateCourseLayoutPars(courseId, layoutId, holePars);
-                            
+
                             if (submitToDatabase) {
                                 const layout = currentRound.course.layouts?.[layoutId];
                                 if (layout) {
@@ -510,7 +510,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                                         ...layout,
                                         holes: Object.entries(holePars).reduce((acc, [holeNum, par]) => {
                                             acc[holeNum] = {
-                                                ...layout.holes?.[holeNum],
+                                                ...layout.holes?.[parseInt(holeNum)],
                                                 par
                                             };
                                             return acc;
@@ -554,6 +554,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         </>
     );
 }
+
 
 
 

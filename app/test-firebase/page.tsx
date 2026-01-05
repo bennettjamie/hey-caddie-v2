@@ -1,9 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { redirect } from 'next/navigation';
 import { testFirebaseConnection, testFirestoreRules } from '@/lib/testFirebase';
 
 export default function TestFirebase() {
+    // Protect from production deployment
+    useEffect(() => {
+        if (process.env.NODE_ENV === 'production') {
+            redirect('/');
+        }
+    }, []);
+
     const [result, setResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);
 

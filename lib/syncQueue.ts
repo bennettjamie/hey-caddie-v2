@@ -94,3 +94,4 @@ export function clearSyncQueue(): void {
     if (typeof window === 'undefined') return;
     localStorage.removeItem(SYNC_QUEUE_KEY);
 }
+

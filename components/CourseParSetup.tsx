@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { updateCourseLayoutPars, Course } from '@/lib/courses';
+import { updateCourseLayoutPars } from '@/lib/courses';
+import { Course } from '@/types/firestore';
 
 interface CourseParSetupProps {
     course: Course;
@@ -19,12 +20,12 @@ export default function CourseParSetup({ course, layoutKey, onComplete, onCancel
     useEffect(() => {
         const existingLayout = course.layouts?.[layoutKey];
         const initialPars: { [holeNumber: number]: number } = {};
-        
+
         for (let i = 1; i <= numHoles; i++) {
             // Use existing par if available, otherwise default to 3
             initialPars[i] = existingLayout?.holes?.[i]?.par || 3;
         }
-        
+
         setHolePars(initialPars);
     }, [numHoles, course, layoutKey]);
 
@@ -53,7 +54,7 @@ export default function CourseParSetup({ course, layoutKey, onComplete, onCancel
     for (let i = 0; i < numHoles; i += 2) {
         const hole1 = i + 1;
         const hole2 = i + 2 <= numHoles ? i + 2 : null;
-        
+
         rows.push(
             <div key={i} style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
                 {/* Hole 1 */}
@@ -77,7 +78,7 @@ export default function CourseParSetup({ course, layoutKey, onComplete, onCancel
                         +
                     </button>
                 </div>
-                
+
                 {/* Hole 2 (if exists) */}
                 {hole2 && (
                     <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px' }}>

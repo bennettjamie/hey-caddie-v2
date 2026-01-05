@@ -6,9 +6,9 @@ import { saveLocalCourses } from '@/lib/courses';
 import CourseParSetup from './CourseParSetup';
 import { Course } from '@/types/firestore';
 
-export default function CourseSelector({ onSelect }: { onSelect: (course: Course) => void }) {
+export default function CourseSelector({ onSelect, onClose, initialSearch = '' }: { onSelect: (course: Course) => void, onClose?: () => void, initialSearch?: string }) {
     const [courses, setCourses] = useState<Course[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState(initialSearch);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [newCourseName, setNewCourseName] = useState('');
@@ -19,7 +19,11 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
     const [showParSetup, setShowParSetup] = useState(false);
 
     useEffect(() => {
-        loadCourses();
+        if (initialSearch) {
+            handleSearch(initialSearch);
+        } else {
+            loadCourses();
+        }
     }, []);
 
     const loadCourses = async () => {
@@ -31,7 +35,7 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
                 setCourses(cachedCourses);
                 setLoading(false); // Show cached courses immediately
             }
-            
+
             // Then try to load from Firebase in background
             try {
                 const allCourses = await getAllCourses();
@@ -81,8 +85,15 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
     const handleSearch = async (term: string) => {
         setSearchTerm(term);
         if (term.trim()) {
-            const results = await searchCourses(term);
-            setCourses(results);
+            setLoading(true);
+            try {
+                const results = await searchCourses(term);
+                setCourses(results);
+            } catch (error) {
+                console.error('Error searching courses:', error);
+            } finally {
+                setLoading(false);
+            }
         } else {
             loadCourses();
         }
@@ -101,7 +112,7 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
         setIsAdding(true);
         // #region agent log
         if (typeof window !== 'undefined') {
-            fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CourseSelector.tsx:78',message:'handleAddCourse called',data:{courseName:newCourseName,location:newCourseLocation},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'CourseSelector.tsx:78', message: 'handleAddCourse called', data: { courseName: newCourseName, location: newCourseLocation }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
         }
         // #endregion
         try {
@@ -110,7 +121,7 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
             for (let i = 1; i <= 18; i++) {
                 defaultHoles[i] = { par: 3 };
             }
-            
+
             const layoutKey = newCourseLayoutName.trim().toLowerCase().replace(/\s+/g, '_') || 'main';
             const newCourse: Omit<Course, 'id'> = {
                 name: newCourseName.trim(),
@@ -123,27 +134,27 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
                     }
                 }
             };
-            
+
             // #region agent log
             if (typeof window !== 'undefined') {
-                fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CourseSelector.tsx:95',message:'About to call createCourse',data:{courseName:newCourse.name,hasLayouts:!!newCourse.layouts},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'CourseSelector.tsx:95', message: 'About to call createCourse', data: { courseName: newCourse.name, hasLayouts: !!newCourse.layouts }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
             }
             // #endregion
-            
+
             const courseId = await createCourse(newCourse);
-            
+
             // #region agent log
             if (typeof window !== 'undefined') {
-                fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CourseSelector.tsx:103',message:'createCourse returned',data:{courseId,isLocal:courseId.startsWith('local_')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'CourseSelector.tsx:103', message: 'createCourse returned', data: { courseId, isLocal: courseId.startsWith('local_') }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
             }
             // #endregion
-            
+
             const createdCourse = { id: courseId, ...newCourse } as Course;
-            
+
             // Note: createCourse already saved to localStorage if Firebase failed
             // Update UI immediately with the new course
             setCourses(prev => [...prev, createdCourse]);
-            
+
             // Reload courses list to ensure everything is in sync
             // This will also refresh from localStorage if needed
             setTimeout(() => {
@@ -151,20 +162,20 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
                     // Ignore errors, we already have the course in state
                 });
             }, 100);
-            
+
             // Reset form
             setNewCourseName('');
             setNewCourseLocation('');
             setNewCourseLayoutName('Main');
             setShowAddModal(false);
-            
+
             // Show par setup screen
             setNewlyCreatedCourse(createdCourse);
             setShowParSetup(true);
         } catch (error: any) {
             // #region agent log
             if (typeof window !== 'undefined') {
-                fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CourseSelector.tsx:165',message:'ERROR in handleAddCourse',data:{errorMessage:error?.message,errorName:error?.name,errorStack:error?.stack?.split('\n').slice(0,8).join('|'),hasSaveLocalCourses:typeof saveLocalCourses,importsCheck:{hasGetAllCourses:typeof getAllCourses,hasGetLocalCourses:typeof getLocalCourses,hasCreateCourse:typeof createCourse}},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                fetch('http://127.0.0.1:7242/ingest/11000245-4554-436b-bff4-d7680d0619d5', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'CourseSelector.tsx:165', message: 'ERROR in handleAddCourse', data: { errorMessage: error?.message, errorName: error?.name, errorStack: error?.stack?.split('\n').slice(0, 8).join('|'), hasSaveLocalCourses: typeof saveLocalCourses, importsCheck: { hasGetAllCourses: typeof getAllCourses, hasGetLocalCourses: typeof getLocalCourses, hasCreateCourse: typeof createCourse } }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
             }
             // #endregion
             console.error('Error adding course:', error);
@@ -187,7 +198,22 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
         <div>
             <div className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h2 style={{ margin: 0 }}>Select Course</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {onClose && (
+                            <button
+                                className="btn"
+                                onClick={onClose}
+                                style={{
+                                    padding: '0.5rem 1rem',
+                                    backgroundColor: 'var(--secondary)',
+                                    marginRight: '0.5rem'
+                                }}
+                            >
+                                Back
+                            </button>
+                        )}
+                        <h2 style={{ margin: 0 }}>Select Course</h2>
+                    </div>
                     <button
                         className="btn"
                         onClick={() => setShowAddModal(true)}
@@ -200,14 +226,58 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
                         + Add Course
                     </button>
                 </div>
-                <input
-                    type="text"
-                    placeholder="Search courses..."
-                    value={searchTerm}
-                    onChange={(e) => handleSearch(e.target.value)}
-                    className="input"
-                    style={{ marginTop: '1rem' }}
-                />
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                    <input
+                        type="text"
+                        placeholder="Search courses..."
+                        value={searchTerm}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        className="input"
+                        style={{ flex: 1 }}
+                    />
+                    <button
+                        className="btn"
+                        onClick={() => {
+                            if ('geolocation' in navigator) {
+                                setLoading(true);
+                                navigator.geolocation.getCurrentPosition(
+                                    async (position) => {
+                                        try {
+                                            const { findCoursesNearLocation } = await import('@/lib/courses');
+                                            const nearby = await findCoursesNearLocation(
+                                                position.coords.latitude,
+                                                position.coords.longitude
+                                            );
+                                            setCourses(nearby);
+                                        } catch (e) {
+                                            console.error('Error finding nearby:', e);
+                                            alert('Could not find nearby courses.');
+                                        } finally {
+                                            setLoading(false);
+                                        }
+                                    },
+                                    (error) => {
+                                        console.error('Geolocation error:', error);
+                                        setLoading(false);
+                                        alert('Location access denied or failed.');
+                                    }
+                                );
+                            } else {
+                                alert('Geolocation is not supported by your browser.');
+                            }
+                        }}
+                        style={{
+                            backgroundColor: 'var(--info)',
+                            padding: '0 1rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}
+                        title="Find Nearby Courses"
+                    >
+                        📍
+                    </button>
+                </div>
             </div>
 
             {showAddModal && (
@@ -315,8 +385,22 @@ export default function CourseSelector({ onSelect }: { onSelect: (course: Course
             )}
 
             {courses.length === 0 ? (
-                <div className="card">
-                    <p>No courses found.</p>
+                <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
+                    <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No courses found matching "{searchTerm}".</p>
+                    <p style={{ color: 'var(--text-light)', marginBottom: '1.5rem' }}>
+                        Can't find your course? Add it manually!
+                    </p>
+                    <button
+                        className="btn"
+                        onClick={() => setShowAddModal(true)}
+                        style={{
+                            backgroundColor: 'var(--success)',
+                            padding: '0.75rem 1.5rem',
+                            fontSize: '1rem'
+                        }}
+                    >
+                        + Add "{searchTerm || 'New Course'}"
+                    </button>
                 </div>
             ) : (
                 <div>

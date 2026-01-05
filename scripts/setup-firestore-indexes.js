@@ -84,3 +84,4 @@ console.log('   - Indexes can take a few minutes to build');
 console.log('   - You can check index status in Firebase Console');
 console.log('   - Some queries will work without indexes but may be slower\n');
 
+

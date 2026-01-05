@@ -19,7 +19,7 @@ const SCORE_TERM_MAP: { [key: number]: string } = {
 };
 
 function getScoreTerm(score: number): string {
-    return SCORE_TERM_MAP[score.toString()] || `${score > 0 ? '+' : ''}${score}`;
+    return SCORE_TERM_MAP[score] || `${score > 0 ? '+' : ''}${score}`;
 }
 
 export function processQuery(
@@ -135,10 +135,10 @@ function generateLeaderboardResponse(gameState: any): QueryResponse {
 
     const players = gameState.currentRound.players;
     const scores = gameState.currentRound.scores || {};
-    
+
     // Calculate total scores for each player
     const playerTotals: { [key: string]: number } = {};
-    
+
     players.forEach((player: any) => {
         playerTotals[player.id] = 0;
         Object.keys(scores).forEach((holeNum) => {
@@ -163,9 +163,9 @@ function generateLeaderboardResponse(gameState: any): QueryResponse {
 
     const leader = sortedPlayers[0];
     const leaderScore = playerTotals[leader.id];
-    const leaderScoreText = leaderScore === 0 
-        ? "even par" 
-        : leaderScore < 0 
+    const leaderScoreText = leaderScore === 0
+        ? "even par"
+        : leaderScore < 0
             ? `${Math.abs(leaderScore)} under par`
             : `${leaderScore} over par`;
 
@@ -177,16 +177,16 @@ function generateLeaderboardResponse(gameState: any): QueryResponse {
     }
 
     let response = `${leader.name} is winning at ${leaderScoreText}.`;
-    
+
     for (let i = 1; i < Math.min(sortedPlayers.length, 4); i++) {
         const player = sortedPlayers[i];
         const score = playerTotals[player.id];
-        const scoreText = score === 0 
-            ? "even par" 
-            : score < 0 
+        const scoreText = score === 0
+            ? "even par"
+            : score < 0
                 ? `${Math.abs(score)} under par`
                 : `${score} over par`;
-        
+
         const position = i === 1 ? "second" : i === 2 ? "third" : `${i + 1}th`;
         response += ` ${player.name} is ${position} at ${scoreText}.`;
     }
@@ -307,9 +307,9 @@ function generatePersonalScoreResponse(gameState: any): QueryResponse {
         };
     }
 
-    const scoreText = totalScore === 0 
-        ? "even par" 
-        : totalScore < 0 
+    const scoreText = totalScore === 0
+        ? "even par"
+        : totalScore < 0
             ? `${Math.abs(totalScore)} under par`
             : `${totalScore} over par`;
 
@@ -354,7 +354,7 @@ function generateBettingResponse(gameState: any): QueryResponse {
     }
 
     const pendingBets = gameState.fundatoryBets.filter((bet: any) => bet.status === 'pending');
-    
+
     if (pendingBets.length === 0) {
         return {
             text: "No pending bets.",

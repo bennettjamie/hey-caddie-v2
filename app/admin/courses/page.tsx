@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import CourseImporter from '@/components/CourseImporter';
-import { getAllCourses, Course } from '@/lib/courses';
+import { getAllCourses } from '@/lib/courses';
+import { Course } from '@/types/firestore';
 
 export default function AdminCourses() {
     const [courses, setCourses] = useState<Course[]>([]);
@@ -23,7 +24,7 @@ export default function AdminCourses() {
     return (
         <main className="container" style={{ padding: '2rem' }}>
             <h1>Course Management</h1>
-            
+
             <div style={{ marginTop: '2rem' }}>
                 <CourseImporter />
             </div>
@@ -38,6 +39,40 @@ export default function AdminCourses() {
                         style={{ backgroundColor: 'var(--info)' }}
                     >
                         {loading ? 'Loading...' : 'Refresh List'}
+                    </button>
+                    <button
+                        className="btn"
+                        onClick={async () => {
+                            if (!confirm('Import Vancouver Seed Data (Robert Burnaby Park)?')) return;
+
+                            setLoading(true);
+                            try {
+                                const { importCoursesBatch } = await import('@/lib/courseImport');
+                                const seedData = [{
+                                    id: "2062",
+                                    name: "Robert Burnaby Park",
+                                    city: "Burnaby",
+                                    state: "BC",
+                                    address: "Burnaby, BC",
+                                    description: "Groomed, wooded park setting with grass fairways and tall evergreens.",
+                                    latitude: 49.235783,
+                                    longitude: -122.93328
+                                }];
+
+                                const result = await importCoursesBatch(seedData);
+                                alert(`Imported: ${result.success} success, ${result.failed} failed.`);
+                                loadCourses();
+                            } catch (e) {
+                                console.error(e);
+                                alert('Import failed');
+                            } finally {
+                                setLoading(false);
+                            }
+                        }}
+                        disabled={loading}
+                        style={{ backgroundColor: 'var(--success)', marginLeft: '1rem' }}
+                    >
+                        🌲 Seed Vancouver Data
                     </button>
                 </div>
 
@@ -70,7 +105,7 @@ export default function AdminCourses() {
                                             rel="noopener noreferrer"
                                             style={{ fontSize: '0.75rem', color: 'var(--info)' }}
                                         >
-                                            View on dgcoursereview.com →
+                                            View Source Link →
                                         </a>
                                     )}
                                 </div>
@@ -85,6 +120,7 @@ export default function AdminCourses() {
         </main>
     );
 }
+
 
 
 

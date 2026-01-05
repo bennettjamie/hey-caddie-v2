@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Courses - Anyone can read, authenticated users can write
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+      
+      // Allow updates to specific fields without authentication (for local-first)
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['layouts', 'updatedAt']);
+    }
+    
+    // Players - Authenticated users can read/write
+    match /players/{playerId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    // Rounds - Authenticated users can read/write their own rounds
+    match /rounds/{roundId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    // MRTZ Ledger - Authenticated users can read/write
+    match /mrtzLedger/{entryId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Player MRTZ balances
+    match /playerMRTZ/{playerId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}

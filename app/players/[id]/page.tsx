@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPlayer, Player } from '@/lib/players';
-import { getCompletedRounds, getLocalRounds, Round } from '@/lib/rounds';
+import { getCompletedRounds, getLocalRounds } from '@/lib/rounds';
+import { Round } from '@/types/firestore';
 import { calculatePlayerStatistics, PlayerStatistics, getScoreDisplay, getScoreColor } from '@/lib/statistics';
 
 export default function PlayerProfile() {
     const params = useParams();
     const playerId = params.id as string;
-    
+
     const [player, setPlayer] = useState<Player | null>(null);
     const [stats, setStats] = useState<PlayerStatistics | null>(null);
     const [loading, setLoading] = useState(true);
@@ -94,10 +95,10 @@ export default function PlayerProfile() {
                         </div>
 
                         <div className="card" style={{ textAlign: 'center' }}>
-                            <div style={{ 
-                                fontSize: '2rem', 
-                                fontWeight: 'bold', 
-                                color: getScoreColor(stats.averageScore) 
+                            <div style={{
+                                fontSize: '2rem',
+                                fontWeight: 'bold',
+                                color: getScoreColor(stats.averageScore)
                             }}>
                                 {getScoreDisplay(stats.averageScore)}
                             </div>
@@ -107,10 +108,10 @@ export default function PlayerProfile() {
                         </div>
 
                         <div className="card" style={{ textAlign: 'center' }}>
-                            <div style={{ 
-                                fontSize: '2rem', 
-                                fontWeight: 'bold', 
-                                color: getScoreColor(stats.bestRound) 
+                            <div style={{
+                                fontSize: '2rem',
+                                fontWeight: 'bold',
+                                color: getScoreColor(stats.bestRound)
                             }}>
                                 {getScoreDisplay(stats.bestRound)}
                             </div>
@@ -126,8 +127,8 @@ export default function PlayerProfile() {
 
                         {stats.improvementTrend !== 0 && (
                             <div className="card" style={{ textAlign: 'center' }}>
-                                <div style={{ 
-                                    fontSize: '2rem', 
+                                <div style={{
+                                    fontSize: '2rem',
                                     fontWeight: 'bold',
                                     color: stats.improvementTrend > 0 ? 'var(--success)' : 'var(--danger)'
                                 }}>
@@ -146,7 +147,7 @@ export default function PlayerProfile() {
                             <h3>Recent Rounds</h3>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem' }}>
                                 {stats.recentRounds.map((round) => {
-                                    const roundTotal = Object.values(round.scores || {}).reduce((sum, hole) => 
+                                    const roundTotal = Object.values(round.scores || {}).reduce((sum, hole) =>
                                         sum + (hole[playerId] || 0), 0);
 
                                     return (
@@ -172,8 +173,8 @@ export default function PlayerProfile() {
                                                     {new Date(round.date).toLocaleDateString()}
                                                 </div>
                                             </div>
-                                            <div style={{ 
-                                                fontSize: '1.25rem', 
+                                            <div style={{
+                                                fontSize: '1.25rem',
                                                 fontWeight: 'bold',
                                                 color: getScoreColor(roundTotal)
                                             }}>

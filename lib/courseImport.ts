@@ -42,14 +42,14 @@ export interface DGCourseReviewCourse {
  */
 export function transformDGCourseReviewData(data: DGCourseReviewCourse): Omit<Course, 'id'> {
     const layouts: { [key: string]: CourseLayout } = {};
-    
+
     // Process layouts
     if (data.layouts && data.layouts.length > 0) {
         data.layouts.forEach((layout, index) => {
             const layoutId = layout.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `layout_${index}`;
             const holes: { [holeNumber: number]: HoleInfo } = {};
             let parTotal = 0;
-            
+
             layout.holes.forEach((hole) => {
                 holes[hole.number] = {
                     par: hole.par,
@@ -58,7 +58,7 @@ export function transformDGCourseReviewData(data: DGCourseReviewCourse): Omit<Co
                 };
                 parTotal += hole.par;
             });
-            
+
             layouts[layoutId] = {
                 name: layout.name,
                 holes,
@@ -71,17 +71,17 @@ export function transformDGCourseReviewData(data: DGCourseReviewCourse): Omit<Co
         for (let i = 1; i <= 18; i++) {
             defaultHoles[i] = { par: 3 };
         }
-        
+
         layouts['default'] = {
             name: 'Main',
             holes: defaultHoles,
             parTotal: 54
         };
     }
-    
+
     return {
         name: data.name,
-        location: data.city && data.state ? `${data.city}, ${data.state}` : data.address || data.location,
+        location: data.city && data.state ? `${data.city}, ${data.state}` : data.address || '',
         city: data.city,
         state: data.state,
         country: data.country,
@@ -125,7 +125,7 @@ export async function importOrUpdateCourse(data: DGCourseReviewCourse): Promise<
         const { getAllCourses } = await import('@/lib/courses');
         const allCourses = await getAllCourses();
         const existing = allCourses.find(c => c.dgcoursereviewId === data.id);
-        
+
         if (existing) {
             // Update existing course
             const courseData = transformDGCourseReviewData(data);
@@ -155,7 +155,7 @@ export async function importCoursesBatch(courses: DGCourseReviewCourse[]): Promi
     let success = 0;
     let failed = 0;
     const errors: Array<{ course: string; error: string }> = [];
-    
+
     for (const course of courses) {
         try {
             await importOrUpdateCourse(course);
@@ -168,7 +168,7 @@ export async function importCoursesBatch(courses: DGCourseReviewCourse[]): Promi
             });
         }
     }
-    
+
     return { success, failed, errors };
 }
 

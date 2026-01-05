@@ -1,11 +1,12 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { FundatoryBet, calculateSkins, calculateNassau } from '@/lib/betting';
+import { FundatoryBet } from '@/lib/betting';
+import { resolveSkinsResults, resolveNassauResults } from '@/lib/roundResolution';
+import { processRoundCarryOvers } from '@/lib/mrtzCarryOvers';
 import { saveRound, convertGameRoundToFirestore, saveLocalRound } from '@/lib/rounds';
 import { calculateRoundMRTZ, updatePlayerMRTZ } from '@/lib/mrtz';
 import { createRoundLedgerEntries } from '@/lib/mrtzLedger';
-import { createCarryOver } from '@/lib/mrtzCarryOvers';
 import { GameRound, FinalRoundData, CachedRound, RoundResolution } from '@/types/game';
 import { Course } from '@/types/firestore';
 import { Player } from '@/lib/players';
@@ -82,12 +83,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (typeof window !== 'undefined') {
             setIsLoading(true);
-            
+
             // EXPLICITLY clear all state first - NEVER auto-restore
             setCurrentRound(null);
             setFundatoryBets([]);
             setActiveBets({});
-            
+
             // Handle localStorage cleanup only (never restore from here)
             const savedRound = localStorage.getItem('currentRound');
             if (savedRound) {
@@ -100,14 +101,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         const minutesSinceStart = startTime && !isNaN(startTime.getTime())
                             ? (now.getTime() - startTime.getTime()) / (1000 * 60)
                             : Infinity;
-                        
+
                         // Only clean up stale rounds, never restore
                         if (minutesSinceStart > MAX_ROUND_AGE_MINUTES || !startTime || isNaN(startTime.getTime())) {
                             // Round is too old or missing startTime, save as partial then clear
-                            const ageDescription = minutesSinceStart === Infinity 
+                            const ageDescription = minutesSinceStart === Infinity
                                 ? (startTime ? 'invalid startTime' : 'missing startTime')
                                 : `${minutesSinceStart.toFixed(1)} minutes old`;
-                            
+
                             // Save as partial round if it has scores
                             if (parsed.scores && Object.keys(parsed.scores).length > 0 && parsed.course) {
                                 (async () => {
@@ -128,22 +129,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
                                             'partial' // Mark as partial
                                         );
                                         await saveRound(partialRound);
-                                        console.log(`Saved stale round as partial to database (${ageDescription})`);
+                                        // Removed console.log`Saved stale round as partial to database (${ageDescription})`);
                                     } catch (error) {
                                         console.error('Error saving partial round:', error);
                                         // Still clear even if save fails
                                     }
                                 })();
                             }
-                            
-                            console.log(`Clearing stale active round from localStorage (${ageDescription})`);
+
+                            // Removed console.log`Clearing stale active round from localStorage (${ageDescription})`);
                             localStorage.removeItem('currentRound');
                             localStorage.removeItem('fundatoryBets');
                             localStorage.removeItem('activeBets');
                         } else {
                             // Recent round exists but we DON'T auto-restore
                             // It will be available via "Continue Round" or cached rounds
-                            console.log('Recent round found in localStorage but not auto-restoring. Use "Continue Round" button.');
+                            // Removed console.log'Recent round found in localStorage but not auto-restoring. Use "Continue Round" button.');
                         }
                     }
                 } catch (e) {
@@ -152,7 +153,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     localStorage.removeItem('currentRound');
                 }
             }
-            
+
             // Don't restore bets either - they should only exist with an active round
             setIsLoading(false);
         }
@@ -186,8 +187,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
             console.error('No valid player IDs found when starting round');
             return;
         }
-        
-        const newRound = {
+
+        const newRound: GameRound = {
             course: selectedCourse,
             players: selectedPlayers,
             scores: {}, // { holeNumber: { playerId: score } }
@@ -216,17 +217,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const setActiveHole = useCallback((hole: number) => {
-        setCurrentRound((prev: any) => {
+        setCurrentRound((prev: GameRound | null) => {
             if (!prev) return prev;
-            
+
             let updatedTeeOrder = prev.teeOrder || [];
-            
+
             // If moving to a new hole (not hole 1), update tee order based on golf rules
             // Golf rules: lowest score from previous hole tees first
             if (hole > 1 && prev.scores) {
                 const previousHole = hole - 1;
                 const previousHoleScores = prev.scores[previousHole];
-                
+
                 if (previousHoleScores && Object.keys(previousHoleScores).length > 0) {
                     // Calculate tee order based on scores (lowest score first)
                     const playerIds = prev.players.map((p: Player) => p.id).filter(Boolean);
@@ -243,7 +244,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     });
                 }
             }
-            
+
             return {
                 ...prev,
                 activeHole: hole,
@@ -254,7 +255,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const nextTee = useCallback(() => {
-        setCurrentRound((prev: any) => {
+        setCurrentRound((prev: GameRound | null) => {
             if (!prev || !prev.teeOrder || prev.teeOrder.length === 0) return prev;
             return {
                 ...prev,
@@ -308,208 +309,53 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     const endRound = async () => {
         let finalRoundData: any = null;
-        
+
         if (currentRound && currentRound.course) {
             // Check if round has score data
             const hasScoreData = currentRound.scores && Object.keys(currentRound.scores).length > 0;
-            
+
             // Get resolution options if available
             let resolution: any = null;
             if (typeof window !== 'undefined' && (window as any).__pendingRoundResolution) {
                 resolution = (window as any).__pendingRoundResolution;
                 delete (window as any).__pendingRoundResolution;
             }
-            
+
             try {
                 // Convert to Firestore format
                 const layoutId = currentRound.course?.selectedLayoutKey || 'default';
                 const courseId = currentRound.course.id || currentRound.course.name; // Fallback to name if no ID
                 const layoutName = currentRound.course.layouts?.[layoutId]?.name || 'Main';
-                
+
                 // Create player names map for denormalization
                 const playerNames: { [key: string]: string } = {};
                 currentRound.players.forEach((p: Player) => {
                     playerNames[p.id] = p.name;
                 });
-                
+
                 // Calculate final betting results
                 const holes = Array.from({ length: 18 }, (_, i) => i + 1);
                 const playerIds = currentRound.players.map((p: Player) => p.id);
-                
-                let skinsResults: { [holeNumber: number]: {
-                    winnerId?: string;
-                    value: number;
-                    carryOver: boolean;
-                    push?: boolean;
-                    tiedPlayers?: string[];
-                } } = {};
+
+                let skinsResults: {
+                    [holeNumber: number]: {
+                        winnerId?: string;
+                        value: number;
+                        carryOver: boolean;
+                        push?: boolean;
+                        tiedPlayers?: string[];
+                    }
+                } = {};
                 let nassauResults: NassauResult | null = null;
-                
+
                 if (activeBets.skins?.started) {
-                    const skins = calculateSkins(currentRound.scores, holes, activeBets.skins.value, activeBets.skins.participants);
-                    
-                    // Handle resolution for skins
-                    if (resolution?.action === 'exclude') {
-                        // Exclude carryovers - only include resolved skins
-                        skins.forEach(s => {
-                            if (!s.isCarryOver) {
-                                skinsResults[s.holeNumber] = {
-                                    winnerId: s.winnerId || undefined,
-                                    value: s.value,
-                                    carryOver: false
-                                };
-                            }
-                        });
-                    } else if (resolution?.action === 'playoff' && resolution.playoffWinners) {
-                        // Use playoff winners
-                        skins.forEach(s => {
-                            if (s.isCarryOver && resolution.playoffWinners[s.holeNumber]) {
-                                skinsResults[s.holeNumber] = {
-                                    winnerId: resolution.playoffWinners[s.holeNumber],
-                                    value: s.value,
-                                    carryOver: false
-                                };
-                            } else if (!s.isCarryOver) {
-                                skinsResults[s.holeNumber] = {
-                                    winnerId: s.winnerId || undefined,
-                                    value: s.value,
-                                    carryOver: false
-                                };
-                            }
-                        });
-                    } else if (resolution?.action === 'push') {
-                        // Push: divide MRTZ equally among tied players
-                        skins.forEach(s => {
-                            if (s.isCarryOver) {
-                                // Find tied players (all players who tied on this hole)
-                                const holeScores = currentRound.scores[s.holeNumber];
-                                if (holeScores) {
-                                    const minScore = Math.min(...Object.values(holeScores) as number[]);
-                                    const tiedPlayers = Object.keys(holeScores).filter(
-                                        pid => holeScores[pid] === minScore
-                                    );
-                                    // Divide value equally - this will be handled in MRTZ calculation
-                                    // Mark as push for special handling
-                                    skinsResults[s.holeNumber] = {
-                                        winnerId: undefined,
-                                        value: s.value,
-                                        carryOver: false,
-                                        push: true,
-                                        tiedPlayers: tiedPlayers
-                                    };
-                                }
-                            } else {
-                                skinsResults[s.holeNumber] = {
-                                    winnerId: s.winnerId || undefined,
-                                    value: s.value,
-                                    carryOver: false
-                                };
-                            }
-                        });
-                    } else if (resolution?.action === 'payout') {
-                        // For payout, include all but mark carryovers as resolved if needed
-                        skins.forEach(s => {
-                            skinsResults[s.holeNumber] = {
-                                winnerId: s.winnerId || undefined,
-                                value: s.value,
-                                carryOver: s.isCarryOver && !resolution.settleToday
-                            };
-                        });
-                    } else {
-                        // Default: include all
-                        skins.forEach(s => {
-                            skinsResults[s.holeNumber] = {
-                                winnerId: s.winnerId || undefined,
-                                value: s.value,
-                                carryOver: s.isCarryOver
-                            };
-                        });
-                    }
+                    skinsResults = resolveSkinsResults(currentRound, activeBets, resolution);
                 }
-                
+
                 if (activeBets.nassau?.started) {
-                    nassauResults = calculateNassau(currentRound.scores, playerIds, activeBets.nassau.participants);
-                    
-                    // Handle resolution for nassau ties
-                    if (resolution?.action === 'exclude') {
-                        // Exclude unresolved segments
-                        if (nassauResults.front9WinnerId === null) {
-                            nassauResults.front9WinnerId = undefined;
-                        }
-                        if (nassauResults.back9WinnerId === null) {
-                            nassauResults.back9WinnerId = undefined;
-                        }
-                        if (nassauResults.overallWinnerId === null) {
-                            nassauResults.overallWinnerId = undefined;
-                        }
-                    } else if (resolution?.action === 'push') {
-                        // Push: divide MRTZ equally among tied players for each segment
-                        const nassauValue = activeBets.nassau?.value || 0;
-                        if (nassauResults.front9WinnerId === null) {
-                            // Find tied players for front 9
-                            const front9Scores: { [key: string]: number } = {};
-                            playerIds.forEach((p: string) => {
-                                let total = 0;
-                                for (let i = 1; i <= 9; i++) {
-                                    total += currentRound.scores[i]?.[p] || 0;
-                                }
-                                front9Scores[p] = total;
-                            });
-                            const minScore = Math.min(...Object.values(front9Scores));
-                            const tiedPlayers = Object.keys(front9Scores).filter(
-                                pid => front9Scores[pid] === minScore
-                            );
-                            nassauResults.front9Push = {
-                                tiedPlayers,
-                                value: nassauValue,
-                                divided: nassauValue / tiedPlayers.length
-                            };
-                        }
-                        if (nassauResults.back9WinnerId === null) {
-                            // Find tied players for back 9
-                            const back9Scores: { [key: string]: number } = {};
-                            playerIds.forEach((p: string) => {
-                                let total = 0;
-                                for (let i = 10; i <= 18; i++) {
-                                    total += currentRound.scores[i]?.[p] || 0;
-                                }
-                                back9Scores[p] = total;
-                            });
-                            const minScore = Math.min(...Object.values(back9Scores));
-                            const tiedPlayers = Object.keys(back9Scores).filter(
-                                pid => back9Scores[pid] === minScore
-                            );
-                            nassauResults.back9Push = {
-                                tiedPlayers,
-                                value: nassauValue,
-                                divided: nassauValue / tiedPlayers.length
-                            };
-                        }
-                        if (nassauResults.overallWinnerId === null) {
-                            // Find tied players for overall
-                            const overallScores: { [key: string]: number } = {};
-                            playerIds.forEach((p: string) => {
-                                let total = 0;
-                                for (let i = 1; i <= 18; i++) {
-                                    total += currentRound.scores[i]?.[p] || 0;
-                                }
-                                overallScores[p] = total;
-                            });
-                            const minScore = Math.min(...Object.values(overallScores));
-                            const tiedPlayers = Object.keys(overallScores).filter(
-                                pid => overallScores[pid] === minScore
-                            );
-                            nassauResults.overallPush = {
-                                tiedPlayers,
-                                value: nassauValue,
-                                divided: nassauValue / tiedPlayers.length
-                            };
-                        }
-                    }
-                    // For playoff and payout, nassau ties would need manual resolution
-                    // which is more complex, so we'll handle it in the UI
+                    nassauResults = resolveNassauResults(currentRound, activeBets, playerIds, resolution);
                 }
-                
+
                 // Calculate MRTZ for each player
                 const roundMRTZ = calculateRoundMRTZ(
                     {
@@ -519,11 +365,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     activeBets,
                     fundatoryBets
                 );
-                
+
                 // Check if settled IRL or added to ledger
                 const settlement = typeof window !== 'undefined' ? (window as any).__roundSettlement : null;
                 const settledIRL = settlement?.settledIRL !== false; // Default to true if not specified
-                
+
                 // Create ledger entries for this round
                 try {
                     const transactionIds = await createRoundLedgerEntries(
@@ -534,7 +380,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         currentRound.players.map((p: Player) => ({ id: p.id, name: p.name })),
                         currentRound.players[0]?.id || 'system' // Use first player as creator, or 'system'
                     );
-                    
+
                     // If not settled IRL, transactions are created but marked as pending
                     // They'll be marked as settled when settlement is confirmed
                     if (!settledIRL) {
@@ -556,88 +402,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         }
                     }
                 }
-                
+
                 // Handle carry-overs
                 if (resolution?.action === 'exclude' || !resolution?.settleToday) {
-                    // Create carry-over entries for unresolved bets
-                    if (skinsResults && Object.keys(skinsResults).length > 0) {
-                        const carryOverHoles: number[] = [];
-                        let accumulatedValue = activeBets.skins?.value || 0;
-                        
-                        Object.entries(skinsResults).forEach(([holeNumStr, skin]: [string, any]) => {
-                            if (skin.carryOver) {
-                                carryOverHoles.push(parseInt(holeNumStr));
-                                accumulatedValue += activeBets.skins?.value || 0;
-                            }
-                        });
-                        
-                        if (carryOverHoles.length > 0) {
-                            try {
-                                await createCarryOver(
-                                    courseId,
-                                    'skins',
-                                    activeBets.skins?.value || 0,
-                                    {
-                                        skins: {
-                                            holes: carryOverHoles,
-                                            accumulatedValue
-                                        }
-                                    },
-                                    playerIds,
-                                    currentRound.players[0]?.id || 'system'
-                                );
-                            } catch (error) {
-                                console.error('Error creating carry-over:', error);
-                            }
-                        }
-                    }
-                    
-                    // Handle Nassau carry-overs
-                    if (nassauResults) {
-                        const tiedSegments: ('front9' | 'back9' | 'overall')[] = [];
-                        if (!nassauResults.front9WinnerId && nassauResults.front9Push) {
-                            tiedSegments.push('front9');
-                        }
-                        if (!nassauResults.back9WinnerId && nassauResults.back9Push) {
-                            tiedSegments.push('back9');
-                        }
-                        if (!nassauResults.overallWinnerId && nassauResults.overallPush) {
-                            tiedSegments.push('overall');
-                        }
-                        
-                        if (tiedSegments.length > 0) {
-                            // Get unique tied players
-                            const allTiedPlayers = [
-                                ...(nassauResults.front9Push?.tiedPlayers || []),
-                                ...(nassauResults.back9Push?.tiedPlayers || []),
-                                ...(nassauResults.overallPush?.tiedPlayers || [])
-                            ];
-                            const uniqueTiedPlayers = allTiedPlayers.filter((v, i, a) => a.indexOf(v) === i);
-                            
-                            try {
-                                await createCarryOver(
-                                    courseId, // originalRoundId
-                                    'nassau',
-                                    activeBets.nassau?.value || 0,
-                                    {
-                                        nassau: {
-                                            segments: tiedSegments,
-                                            tiedPlayers: uniqueTiedPlayers
-                                        }
-                                    },
-                                    playerIds,
-                                    currentRound.players[0]?.id || 'system'
-                                );
-                            } catch (error) {
-                                console.error('Error creating Nassau carry-over:', error);
-                            }
-                        }
-                    }
+                    await processRoundCarryOvers(
+                        courseId,
+                        playerIds,
+                        currentRound.players[0]?.id || 'system',
+                        activeBets,
+                        skinsResults,
+                        nassauResults
+                    );
                 } else {
                     // Carry over - store unresolved bets for future rounds
                     if (typeof window !== 'undefined') {
                         const carryOverBets = {
-                            skins: resolution.action === 'exclude' ? {} : skinsResults,
+                            skins: resolution?.action === 'exclude' ? {} : skinsResults,
                             nassau: nassauResults,
                             timestamp: new Date().toISOString()
                         };
@@ -647,12 +427,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         localStorage.setItem('carryOverBets', JSON.stringify(carryOvers));
                     }
                 }
-                
+
+
                 // Clean up settlement info
                 if (typeof window !== 'undefined') {
                     delete (window as any).__roundSettlement;
                 }
-                
+
                 const firestoreRound = convertGameRoundToFirestore(
                     {
                         ...currentRound,
@@ -667,20 +448,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     layoutId,
                     hasScoreData && Object.keys(currentRound.scores).length >= 18 ? 'completed' : 'partial'
                 );
-                
+
                 // Add metadata for easier display
                 const roundWithMetadata = {
                     ...firestoreRound,
-                    courseName: course.name,
+                    courseName: course?.name || 'Unknown',
                     layoutName: layoutName,
                     playerNames: playerNames
                 };
-                
+
                 // Save to cloud if there's score data
                 if (hasScoreData) {
                     try {
                         const roundId = await saveRound(roundWithMetadata);
-                        console.log('Round saved to Firebase:', roundId);
+                        // Removed console.log'Round saved to Firebase:', roundId);
                     } catch (error) {
                         console.error('Failed to save to Firebase, saving locally:', error);
                         // Save locally as fallback
@@ -690,7 +471,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         });
                     }
                 }
-                
+
                 // Store final round data inside try block where variables are in scope
                 finalRoundData = {
                     ...currentRound,
@@ -728,7 +509,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 };
             }
         }
-        
+
         // Save to cached rounds before clearing
         if (typeof window !== 'undefined' && currentRound) {
             const endedRound = {
@@ -738,36 +519,36 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 fundatoryBets,
                 activeBets
             };
-            
+
             // Add to cached rounds
             try {
                 const cached = localStorage.getItem('cachedRounds');
                 const cachedRounds = cached ? JSON.parse(cached) : [];
                 const holesPlayed = currentRound.scores ? Object.keys(currentRound.scores).length : 0;
-                
+
                 cachedRounds.push({
                     timestamp: new Date().toISOString(),
                     round: endedRound,
                     courseName: currentRound.course?.name || 'Unknown Course',
                     holesPlayed
                 });
-                
+
                 // Keep only last 50 cached rounds
-                const sorted = cachedRounds.sort((a: CachedRound, b: CachedRound) => 
+                const sorted = cachedRounds.sort((a: CachedRound, b: CachedRound) =>
                     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
                 ).slice(0, 50);
-                
+
                 localStorage.setItem('cachedRounds', JSON.stringify(sorted));
             } catch (e) {
                 console.error('Error saving to cached rounds:', e);
             }
-            
+
             // Also save as currentRound for "Continue Round" button (if recent)
             localStorage.setItem('currentRound', JSON.stringify(endedRound));
             localStorage.setItem('fundatoryBets', JSON.stringify(fundatoryBets));
             localStorage.setItem('activeBets', JSON.stringify(activeBets));
         }
-        
+
         // Store final round data before clearing (fallback if try block didn't execute)
         if (!finalRoundData) {
             finalRoundData = {
@@ -782,7 +563,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     players.map((p: any) => {
                         let total = 0;
                         for (let i = 1; i <= 18; i++) {
-                            const score = currentRound.scores[i]?.[p.id];
+                            const score = currentRound?.scores[i]?.[p.id];
                             if (score !== undefined && score !== null) {
                                 total += score;
                             }
@@ -830,7 +611,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     const startTime = new Date(parsed.startTime);
                     const now = new Date();
                     const minutesSinceStart = (now.getTime() - startTime.getTime()) / (1000 * 60);
-                    
+
                     if (!isNaN(startTime.getTime()) && minutesSinceStart <= MAX_ROUND_AGE_MINUTES) {
                         // Ensure all round properties are set
                         const restoredRound: GameRound = {
@@ -841,7 +622,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                             currentTeeIndex: parsed.currentTeeIndex ?? 0
                         };
                         setCurrentRound(restoredRound);
-                        
+
                         if (parsed.fundatoryBets) {
                             setFundatoryBets(parsed.fundatoryBets);
                         }
@@ -861,10 +642,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    const addPlayerToRound = useCallback((player: any) => {
-        setCurrentRound((prev: any) => {
+    const addPlayerToRound = useCallback((player: Player) => {
+        setCurrentRound((prev: GameRound | null) => {
             if (!prev) return prev;
-            const exists = prev.players.some((p: any) => p.id === player.id);
+            const exists = prev.players.some((p: Player) => p.id === player.id);
             if (exists) {
                 console.warn('Player already in round');
                 return prev;
@@ -886,16 +667,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 ...prev,
                 players: updatedPlayers,
                 teeOrder: (prev.teeOrder || []).filter((id: string) => id !== playerId),
-                scores: Object.entries(prev.scores || {}).reduce((acc, [hole, scores]: [string, any]) => {
+                scores: Object.entries(prev.scores || {}).reduce((acc, [hole, scores]: [string, { [pid: string]: number }]) => {
                     const { [playerId]: removed, ...rest } = scores;
-                    acc[hole] = rest;
+                    acc[parseInt(hole)] = rest;
                     return acc;
-                }, {} as any)
+                }, {} as { [holeNumber: number]: { [playerId: string]: number } })
             };
         });
     }, []);
 
-    const getCachedRounds = useCallback((): Array<{timestamp: string, round: any, courseName: string, holesPlayed: number}> => {
+    const getCachedRounds = useCallback((): Array<{ timestamp: string, round: GameRound, courseName: string, holesPlayed: number }> => {
         if (typeof window === 'undefined') return [];
         try {
             const cached = localStorage.getItem('cachedRounds');
@@ -906,7 +687,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 round: item.round,
                 courseName: item.courseName || 'Unknown Course',
                 holesPlayed: item.holesPlayed || 0
-            })).sort((a: any, b: any) => 
+            })).sort((a: any, b: any) =>
                 new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
             );
         } catch (e) {
@@ -932,7 +713,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     currentTeeIndex: parsed.currentTeeIndex ?? 0
                 };
                 setCurrentRound(restoredRound);
-                
+
                 if (parsed.fundatoryBets) {
                     setFundatoryBets(parsed.fundatoryBets);
                 }
@@ -943,16 +724,29 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const updateCourseLayout = useCallback((layoutId: string, holePars: { [holeNumber: number]: number }) => {
-        setCurrentRound((prev: any) => {
+        setCurrentRound((prev: GameRound | null) => {
             if (!prev || !prev.course) return prev;
             const updatedCourse = { ...prev.course };
             if (!updatedCourse.layouts) updatedCourse.layouts = {};
-            if (!updatedCourse.layouts[layoutId]) updatedCourse.layouts[layoutId] = { name: layoutId, holes: {} };
+            if (!updatedCourse.layouts[layoutId]) updatedCourse.layouts[layoutId] = { name: layoutId, holes: {}, parTotal: 0 };
+
             Object.entries(holePars).forEach(([holeNum, par]) => {
                 const holeNumber = parseInt(holeNum);
                 if (!updatedCourse.layouts[layoutId].holes) updatedCourse.layouts[layoutId].holes = {};
-                updatedCourse.layouts[layoutId].holes[holeNumber] = { par };
+                // Preserve existing hole info if any
+                const existingHole = updatedCourse.layouts[layoutId].holes[holeNumber] || {};
+                updatedCourse.layouts[layoutId].holes[holeNumber] = { ...existingHole, par };
             });
+
+            // Recalculate total par
+            let totalPar = 0;
+            if (updatedCourse.layouts[layoutId].holes) {
+                Object.values(updatedCourse.layouts[layoutId].holes).forEach(h => {
+                    totalPar += h.par || 0;
+                });
+            }
+            updatedCourse.layouts[layoutId].parTotal = totalPar;
+
             return {
                 ...prev,
                 course: updatedCourse
@@ -990,8 +784,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
         restoreCachedRound,
         // MRTZ Ledger functions
         getPlayerMRTZBalance: async (playerId: string): Promise<PlayerMRTZSummary> => {
-            const { getPlayerBalance: getBalance } = await import('@/lib/mrtzLedger');
-            return getBalance(playerId);
+            const { getPlayerMRTZSummary: getSummary } = await import('@/lib/mrtzLedger');
+            const summary = await getSummary(playerId);
+            if (!summary) {
+                return {
+                    playerId,
+                    playerName: 'Unknown',
+                    currentBalance: 0,
+                    pendingIn: 0,
+                    pendingOut: 0,
+                    netBalance: 0,
+                    totalWon: 0,
+                    totalLost: 0,
+                    totalSettled: 0,
+                    transactionCount: 0
+                };
+            }
+            return summary;
         },
         getPlayerLedger: async (playerId: string, options?: LedgerOptions): Promise<MRTZLedgerEntry[]> => {
             const { getPlayerLedger: getLedger } = await import('@/lib/mrtzLedger');
@@ -1002,7 +811,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             return getBalances(playerId);
         }
     };
-    
+
     return (
         <GameContext.Provider value={contextValue}>
             {children}

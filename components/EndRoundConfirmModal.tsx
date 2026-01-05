@@ -16,7 +16,7 @@ export default function EndRoundConfirmModal({ onClose, onConfirm }: EndRoundCon
     const holesPlayed = Object.keys(currentRound.scores || {}).length;
     const totalHoles = 18;
     const players = currentRound.players || [];
-    
+
     // Calculate total scores for each player
     const playerTotals: { [playerId: string]: { name: string; total: number; holes: number } } = {};
     players.forEach((player: any) => {
@@ -25,8 +25,7 @@ export default function EndRoundConfirmModal({ onClose, onConfirm }: EndRoundCon
         Object.entries(currentRound.scores || {}).forEach(([holeNum, scores]: [string, any]) => {
             if (scores[player.id] !== undefined && scores[player.id] !== null) {
                 const layoutKey = currentRound.course.selectedLayoutKey || 'default';
-                const par = currentRound.course.layouts?.[layoutKey]?.holes?.[parseInt(holeNum)]?.par || 
-                           currentRound.course.holes?.[parseInt(holeNum) - 1]?.par || 3;
+                const par = currentRound.course.layouts?.[layoutKey]?.holes?.[parseInt(holeNum)]?.par || 3;
                 const relativeScore = scores[player.id];
                 total += relativeScore;
                 holesCount++;
@@ -175,6 +174,7 @@ export default function EndRoundConfirmModal({ onClose, onConfirm }: EndRoundCon
         </div>
     );
 }
+
 
 
 

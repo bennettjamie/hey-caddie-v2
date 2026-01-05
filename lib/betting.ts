@@ -21,6 +21,12 @@ export interface SkinResult {
     isCarryOver: boolean;
 }
 
+export interface NassauPush {
+    tiedPlayers: string[];
+    value: number;
+    divided: number;
+}
+
 export interface NassauResult {
     front9WinnerId: string | null;
     back9WinnerId: string | null;
@@ -28,6 +34,9 @@ export interface NassauResult {
     front9Score: { [playerId: string]: number };
     back9Score: { [playerId: string]: number };
     overallScore: { [playerId: string]: number };
+    front9Push?: NassauPush;
+    back9Push?: NassauPush;
+    overallPush?: NassauPush;
 }
 
 export const calculateSkins = (
@@ -47,7 +56,7 @@ export const calculateSkins = (
         }
 
         // Filter scores by participants if provided
-        const filteredScores = participants 
+        const filteredScores = participants
             ? Object.fromEntries(Object.entries(holeScores).filter(([pid]) => participants.includes(pid)))
             : holeScores;
 
@@ -110,7 +119,7 @@ export const calculateNassau = (
 ): NassauResult => {
     // Use participants if provided, otherwise use all players
     const bettingPlayers = participants && participants.length > 0 ? participants : players;
-    
+
     const front9Scores: { [key: string]: number } = {};
     const back9Scores: { [key: string]: number } = {};
     const overallScores: { [key: string]: number } = {};

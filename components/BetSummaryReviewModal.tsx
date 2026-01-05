@@ -12,11 +12,11 @@ interface BetSummaryReviewModalProps {
 
 export default function BetSummaryReviewModal({ onClose, onConfirm, finalRoundData }: BetSummaryReviewModalProps) {
     const { currentRound: contextRound, activeBets: contextBets = {}, fundatoryBets: contextFundatoryBets } = useGame();
-    
+
     const currentRound = finalRoundData || contextRound;
     const activeBets = finalRoundData?.bets ? {
-        skins: finalRoundData.bets.skins ? { started: true, value: Object.values(finalRoundData.bets.skins)[0]?.value || 0 } : undefined,
-        nassau: finalRoundData.bets.nassau ? { started: true, value: finalRoundData.bets.nassau.value || 0 } : undefined
+        skins: finalRoundData.bets.skins ? { started: true, value: (Object.values(finalRoundData.bets.skins)[0] as any)?.value || 0, participants: undefined } : undefined,
+        nassau: finalRoundData.bets.nassau ? { started: true, value: finalRoundData.bets.nassau.value || 0, participants: undefined } : undefined
     } : contextBets;
     const fundatoryBets = finalRoundData?.bets?.fundatory || contextFundatoryBets;
 
@@ -278,4 +278,5 @@ export default function BetSummaryReviewModal({ onClose, onConfirm, finalRoundDa
         </div>
     );
 }
+
 

@@ -28,7 +28,7 @@ export function speak(text: string, options: TTSOptions = {}): Promise<void> {
         synth.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
-        
+
         utterance.rate = options.rate ?? 1.0;
         utterance.pitch = options.pitch ?? 1.0;
         utterance.volume = options.volume ?? 1.0;
@@ -66,9 +66,9 @@ export function getVoices(): SpeechSynthesisVoice[] {
 
 export function getDefaultVoice(): SpeechSynthesisVoice | null {
     const voices = getVoices();
-    // Prefer English voices, especially US English
+    // Prefer Google US English or Microsoft Natural voices
     const preferred = voices.find(
-        (v) => v.lang.startsWith('en-US') && v.name.includes('English')
+        (v) => (v.name.includes('Google US English') || v.name.includes('Microsoft Zira') || v.name.includes('Natural')) && v.lang.startsWith('en')
     );
     return preferred || voices.find((v) => v.lang.startsWith('en')) || voices[0] || null;
 }
@@ -81,6 +81,7 @@ if (typeof window !== 'undefined') {
         };
     }
 }
+
 
 
 

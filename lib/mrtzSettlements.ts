@@ -4,16 +4,16 @@
  */
 
 import { db } from './firebase';
-import { 
-    collection, 
-    doc, 
-    addDoc, 
-    getDoc, 
-    getDocs, 
-    updateDoc, 
-    query, 
-    where, 
-    orderBy, 
+import {
+    collection,
+    doc,
+    addDoc,
+    getDoc,
+    getDocs,
+    updateDoc,
+    query,
+    where,
+    orderBy,
     limit,
     Timestamp,
     writeBatch
@@ -37,20 +37,20 @@ export async function createSettlement(
     parties: Array<{ playerId: string; role: 'payer' | 'receiver'; amount: number }>,
     transactionIds: string[],
     type: SettlementType,
+    createdBy: string,
     settlementMethod?: {
         moneyAmount?: number;
         currency?: string;
         goodDeedId?: string;
         notes?: string;
-    },
-    createdBy: string
+    }
 ): Promise<string> {
     try {
         const settlementId = generateSettlementId();
         const now = Timestamp.now();
-        
+
         const totalMRTZ = parties.reduce((sum, p) => sum + p.amount, 0);
-        
+
         const settlement: Omit<MRTZSettlement, 'id'> = {
             settlementId,
             type,
@@ -66,7 +66,7 @@ export async function createSettlement(
             createdBy,
             updatedAt: now
         };
-        
+
         const docRef = await addDoc(collection(db, SETTLEMENTS_COLLECTION), settlement);
         return docRef.id;
     } catch (error) {
@@ -89,20 +89,20 @@ export async function agreeToSettlement(
             limit(1)
         );
         const snapshot = await getDocs(q);
-        
+
         if (snapshot.empty) {
             throw new Error('Settlement not found');
         }
-        
+
         const settlementDoc = snapshot.docs[0];
         const settlement = settlementDoc.data() as MRTZSettlement;
-        
+
         // Find the party
         const partyIndex = settlement.parties.findIndex(p => p.playerId === playerId);
         if (partyIndex === -1) {
             throw new Error('Player not part of this settlement');
         }
-        
+
         // Update party agreement
         const updatedParties = [...settlement.parties];
         updatedParties[partyIndex] = {
@@ -110,22 +110,22 @@ export async function agreeToSettlement(
             agreed: true,
             agreedAt: Timestamp.now()
         };
-        
+
         // Check if all parties have agreed
         const allAgreed = updatedParties.every(p => p.agreed);
-        
+
         await updateDoc(settlementDoc.ref, {
             parties: updatedParties,
             status: allAgreed ? 'agreed' : 'pending',
             agreedAt: allAgreed ? Timestamp.now() : settlement.agreedAt,
             updatedAt: Timestamp.now()
         });
-        
+
         // If all agreed, mark transactions as settled
         if (allAgreed) {
             await completeSettlement(settlementId);
         }
-        
+
         return allAgreed;
     } catch (error) {
         console.error('Error agreeing to settlement:', error);
@@ -144,17 +144,17 @@ async function completeSettlement(settlementId: string): Promise<void> {
             limit(1)
         );
         const snapshot = await getDocs(q);
-        
+
         if (snapshot.empty) {
             throw new Error('Settlement not found');
         }
-        
+
         const settlementDoc = snapshot.docs[0];
         const settlement = settlementDoc.data() as MRTZSettlement;
-        
+
         // Mark all related transactions as settled
         const batch = writeBatch(db);
-        
+
         for (const txId of settlement.transactionIds) {
             // Find transaction
             const txQuery = query(
@@ -163,7 +163,7 @@ async function completeSettlement(settlementId: string): Promise<void> {
                 limit(1)
             );
             const txSnapshot = await getDocs(txQuery);
-            
+
             if (!txSnapshot.empty) {
                 const txDoc = txSnapshot.docs[0];
                 batch.update(txDoc.ref, {
@@ -174,14 +174,14 @@ async function completeSettlement(settlementId: string): Promise<void> {
                 });
             }
         }
-        
+
         // Update settlement status
         batch.update(settlementDoc.ref, {
             status: 'completed',
             completedAt: Timestamp.now(),
             updatedAt: Timestamp.now()
         });
-        
+
         await batch.commit();
     } catch (error) {
         console.error('Error completing settlement:', error);
@@ -204,13 +204,13 @@ export async function rejectSettlement(
             limit(1)
         );
         const snapshot = await getDocs(q);
-        
+
         if (snapshot.empty) {
             throw new Error('Settlement not found');
         }
-        
+
         const settlementDoc = snapshot.docs[0];
-        
+
         await updateDoc(settlementDoc.ref, {
             status: 'rejected',
             rejectedAt: Timestamp.now(),
@@ -237,11 +237,11 @@ export async function getPlayerSettlements(
             where('parties', 'array-contains-any', [{ playerId }]),
             orderBy('createdAt', 'desc')
         );
-        
+
         if (status) {
             q = query(q, where('status', '==', status));
         }
-        
+
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({
             id: doc.id,
@@ -253,7 +253,7 @@ export async function getPlayerSettlements(
         const allSettlements = await getDocs(collection(db, SETTLEMENTS_COLLECTION));
         return allSettlements.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as MRTZSettlement))
-            .filter(s => 
+            .filter(s =>
                 s.parties.some(p => p.playerId === playerId) &&
                 (!status || s.status === status)
             )
@@ -276,11 +276,11 @@ export async function getSettlement(settlementId: string): Promise<MRTZSettlemen
             limit(1)
         );
         const snapshot = await getDocs(q);
-        
+
         if (snapshot.empty) {
             return null;
         }
-        
+
         return {
             id: snapshot.docs[0].id,
             ...snapshot.docs[0].data()
@@ -299,13 +299,13 @@ export async function createSettlementFromBalances(
     toPlayerId: string,
     transactionIds: string[],
     type: SettlementType,
+    createdBy: string,
     settlementMethod?: {
         moneyAmount?: number;
         currency?: string;
         goodDeedId?: string;
         notes?: string;
-    },
-    createdBy: string
+    }
 ): Promise<string> {
     // Calculate total amount from transactions
     const txQuery = query(
@@ -313,7 +313,7 @@ export async function createSettlementFromBalances(
         where('transactionId', 'in', transactionIds)
     );
     const txSnapshot = await getDocs(txQuery);
-    
+
     let totalAmount = 0;
     txSnapshot.docs.forEach(doc => {
         const tx = doc.data();
@@ -321,12 +321,13 @@ export async function createSettlementFromBalances(
             totalAmount += tx.amount;
         }
     });
-    
+
     const parties = [
         { playerId: fromPlayerId, role: 'payer' as const, amount: totalAmount },
         { playerId: toPlayerId, role: 'receiver' as const, amount: totalAmount }
     ];
-    
-    return createSettlement(parties, transactionIds, type, settlementMethod, createdBy);
+
+    return createSettlement(parties, transactionIds, type, createdBy, settlementMethod);
 }
+
 

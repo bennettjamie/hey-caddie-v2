@@ -3,20 +3,21 @@
  */
 
 import { db } from './firebase';
-import { 
-    collection, 
-    addDoc, 
-    getDocs, 
-    doc, 
-    getDoc, 
-    updateDoc, 
-    query, 
-    where, 
-    orderBy, 
+import {
+    collection,
+    addDoc,
+    getDocs,
+    doc,
+    getDoc,
+    updateDoc,
+    query,
+    where,
+    orderBy,
     limit,
-    Timestamp 
+    Timestamp
 } from 'firebase/firestore';
 import { Round } from '@/types/firestore';
+import { GameRound, Player, FinalRoundData } from '@/types/game'; // Assuming this is where they are
 import { queueOperation, isOnline } from './syncQueue';
 
 const ROUNDS_COLLECTION = 'rounds';
@@ -63,7 +64,7 @@ export async function getRound(roundId: string): Promise<Round | null> {
     try {
         const docRef = doc(db, ROUNDS_COLLECTION, roundId);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
             return {
                 id: docSnap.id,
@@ -88,7 +89,7 @@ export async function getUserRounds(userId: string, limitCount: number = 50): Pr
             orderBy('date', 'desc'),
             limit(limitCount)
         );
-        
+
         const querySnapshot = await getDocs(q);
         return querySnapshot.docs.map(doc => ({
             id: doc.id,
@@ -111,7 +112,7 @@ export async function getCompletedRounds(limitCount: number = 100): Promise<Roun
             orderBy('date', 'desc'),
             limit(limitCount)
         );
-        
+
         const querySnapshot = await getDocs(q);
         return querySnapshot.docs.map(doc => ({
             id: doc.id,
@@ -135,7 +136,7 @@ export async function getCourseRounds(courseId: string, limitCount: number = 50)
             orderBy('date', 'desc'),
             limit(limitCount)
         );
-        
+
         const querySnapshot = await getDocs(q);
         return querySnapshot.docs.map(doc => ({
             id: doc.id,
@@ -167,21 +168,21 @@ export async function updateRound(roundId: string, updates: Partial<Round>): Pro
  * Convert round data from game format to Firestore format
  */
 export function convertGameRoundToFirestore(
-    gameRound: GameRound,
+    gameRound: GameRound | FinalRoundData,
     courseId: string,
     layoutId: string,
     status: 'completed' | 'partial' = 'completed'
 ): Omit<Round, 'id'> {
     // Extract player IDs from game round
     const playerIds = gameRound.players?.map((p: Player) => p.id || (p as any).uid) || [];
-    
+
     return {
         courseId,
         layoutId,
         date: gameRound.startTime || new Date().toISOString(),
         players: playerIds,
         scores: gameRound.scores || {},
-        bets: gameRound.bets || {
+        bets: (gameRound as any).bets || {
             skins: {},
             nassau: null,
             fundatory: []

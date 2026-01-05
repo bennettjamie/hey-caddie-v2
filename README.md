@@ -181,9 +181,8 @@ See [COURSE_IMPORT_GUIDE.md](COURSE_IMPORT_GUIDE.md) for detailed instructions.
 
 - [ ] Tournament mode
 - [ ] Score sharing via email/SMS
-- [ ] Advanced betting types (Skins, Nassau)
 - [ ] Course image uploads
-- [ ] Player statistics and history
+- [ ] Enhanced player statistics dashboard
 - [ ] Social features (friends, leaderboards)
 - [ ] Mobile app (React Native)
 
@@ -207,6 +206,7 @@ For issues or questions, please open an issue on GitHub.
 ---
 
 **Happy Disc Golfing! 🥏⛳**
+
 
 
 

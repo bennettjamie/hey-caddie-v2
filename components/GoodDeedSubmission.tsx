@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { submitGoodDeed } from '@/lib/mrtzGoodDeeds';
 import { getAllPlayers, Player } from '@/lib/players';
-import { getAllCourses, Course } from '@/lib/courses';
+import { getAllCourses } from '@/lib/courses';
+import { Course } from '@/types/firestore';
 import { GoodDeedType } from '@/types/mrtz';
 
 interface GoodDeedSubmissionProps {
@@ -41,7 +42,7 @@ export default function GoodDeedSubmission({ playerId, onClose, onSuccess }: Goo
     };
 
     const handleToggleValidator = (validatorId: string) => {
-        setValidators(prev => 
+        setValidators(prev =>
             prev.includes(validatorId)
                 ? prev.filter(id => id !== validatorId)
                 : [...prev, validatorId]
@@ -53,12 +54,12 @@ export default function GoodDeedSubmission({ playerId, onClose, onSuccess }: Goo
             alert('Please provide a description');
             return;
         }
-        
+
         if (validators.length === 0) {
             alert('Please select at least one validator');
             return;
         }
-        
+
         if (mrtzValue <= 0) {
             alert('MRTZ value must be greater than 0');
             return;
@@ -67,13 +68,14 @@ export default function GoodDeedSubmission({ playerId, onClose, onSuccess }: Goo
         setSubmitting(true);
         try {
             const selectedCourse = availableCourses.find(c => c.id === selectedCourseId);
-            
+
             await submitGoodDeed(
                 playerId,
                 deedType,
                 description,
                 mrtzValue,
                 validators,
+                playerId,
                 photos.length > 0 ? photos : undefined,
                 selectedCourse ? {
                     courseId: selectedCourse.id,
@@ -82,10 +84,9 @@ export default function GoodDeedSubmission({ playerId, onClose, onSuccess }: Goo
                         lat: selectedCourse.lat,
                         lng: selectedCourse.lng
                     } : undefined
-                } : undefined,
-                playerId
+                } : undefined
             );
-            
+
             alert('Good deed submitted! Waiting for validation...');
             if (onSuccess) onSuccess();
             if (onClose) onClose();
@@ -309,4 +310,5 @@ export default function GoodDeedSubmission({ playerId, onClose, onSuccess }: Goo
         </div>
     );
 }
+
 

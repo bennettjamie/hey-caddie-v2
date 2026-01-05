@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getCompletedRounds, getLocalRounds, Round } from '@/lib/rounds';
+import { getCompletedRounds, getLocalRounds } from '@/lib/rounds';
+import { Round } from '@/types/firestore';
 import { calculateOverallStatistics, OverallStatistics, getScoreDisplay, getScoreColor } from '@/lib/statistics';
 
 export default function StatisticsDashboard() {
@@ -67,11 +68,11 @@ export default function StatisticsDashboard() {
             <h1>Statistics Dashboard</h1>
 
             {/* Overview Cards */}
-            <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', 
-                gap: '1rem', 
-                marginBottom: '2rem' 
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                gap: '1rem',
+                marginBottom: '2rem'
             }}>
                 <div className="card" style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary)' }}>
@@ -92,10 +93,10 @@ export default function StatisticsDashboard() {
                 </div>
 
                 <div className="card" style={{ textAlign: 'center' }}>
-                    <div style={{ 
-                        fontSize: '2rem', 
-                        fontWeight: 'bold', 
-                        color: getScoreColor(stats.averageScore) 
+                    <div style={{
+                        fontSize: '2rem',
+                        fontWeight: 'bold',
+                        color: getScoreColor(stats.averageScore)
                     }}>
                         {getScoreDisplay(stats.averageScore)}
                     </div>
@@ -192,6 +193,7 @@ export default function StatisticsDashboard() {
         </main>
     );
 }
+
 
 
 

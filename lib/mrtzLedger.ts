@@ -4,16 +4,16 @@
  */
 
 import { db } from './firebase';
-import { 
-    collection, 
-    doc, 
-    addDoc, 
-    getDoc, 
-    getDocs, 
-    updateDoc, 
-    query, 
-    where, 
-    orderBy, 
+import {
+    collection,
+    doc,
+    addDoc,
+    getDoc,
+    getDocs,
+    updateDoc,
+    query,
+    where,
+    orderBy,
     limit,
     Timestamp,
     writeBatch,
@@ -40,7 +40,7 @@ export async function createLedgerEntry(
     try {
         const transactionId = generateTransactionId();
         const now = Timestamp.now();
-        
+
         const ledgerEntry: Omit<MRTZLedgerEntry, 'id'> = {
             ...entry,
             transactionId,
@@ -51,10 +51,10 @@ export async function createLedgerEntry(
 
         // Add to ledger
         const docRef = await addDoc(collection(db, LEDGER_COLLECTION), ledgerEntry);
-        
+
         // Update balances for all affected players
         await updateBalancesFromTransaction(ledgerEntry);
-        
+
         return docRef.id;
     } catch (error) {
         console.error('Error creating ledger entry:', error);
@@ -68,22 +68,22 @@ export async function createLedgerEntry(
 async function updateBalancesFromTransaction(entry: MRTZLedgerEntry): Promise<void> {
     const batch = writeBatch(db);
     const playersToUpdate = new Set<string>();
-    
+
     // Add all participants
     entry.participants.forEach(p => playersToUpdate.add(p));
     if (entry.fromPlayerId) playersToUpdate.add(entry.fromPlayerId);
     if (entry.toPlayerId) playersToUpdate.add(entry.toPlayerId);
-    
+
     // Update each player's balance
-    for (const playerId of playersToUpdate) {
+    for (const playerId of Array.from(playersToUpdate)) {
         const balanceRef = doc(db, BALANCES_COLLECTION, playerId);
         const balanceSnap = await getDoc(balanceRef);
-        
+
         let currentBalance = 0;
         let pendingIn = 0;
         let pendingOut = 0;
         let transactionCount = 0;
-        
+
         if (balanceSnap.exists()) {
             const data = balanceSnap.data();
             currentBalance = data.balance || 0;
@@ -91,7 +91,7 @@ async function updateBalancesFromTransaction(entry: MRTZLedgerEntry): Promise<vo
             pendingOut = data.pendingOut || 0;
             transactionCount = data.transactionCount || 0;
         }
-        
+
         // Calculate changes based on transaction
         if (entry.status === 'confirmed' || entry.status === 'settled') {
             if (entry.toPlayerId === playerId) {
@@ -112,9 +112,9 @@ async function updateBalancesFromTransaction(entry: MRTZLedgerEntry): Promise<vo
                 pendingOut += Math.abs(entry.amount);
             }
         }
-        
+
         transactionCount += 1;
-        
+
         const updateData: Partial<MRTZBalance> = {
             balance: currentBalance,
             pendingIn,
@@ -123,7 +123,7 @@ async function updateBalancesFromTransaction(entry: MRTZLedgerEntry): Promise<vo
             lastUpdated: Timestamp.now(),
             lastTransactionId: entry.transactionId
         };
-        
+
         if (balanceSnap.exists()) {
             batch.update(balanceRef, updateData);
         } else {
@@ -133,7 +133,7 @@ async function updateBalancesFromTransaction(entry: MRTZLedgerEntry): Promise<vo
             });
         }
     }
-    
+
     await batch.commit();
 }
 
@@ -155,19 +155,19 @@ export async function getPlayerLedger(
             where('participants', 'array-contains', playerId),
             orderBy('date', 'desc')
         );
-        
+
         if (options?.type) {
             q = query(q, where('type', '==', options.type));
         }
-        
+
         if (options?.status) {
             q = query(q, where('status', '==', options.status));
         }
-        
+
         if (options?.limit) {
             q = query(q, limit(options.limit));
         }
-        
+
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({
             id: doc.id,
@@ -186,14 +186,14 @@ export async function getPlayerBalance(playerId: string): Promise<MRTZBalance | 
     try {
         const docRef = doc(db, BALANCES_COLLECTION, playerId);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
             return {
                 playerId,
                 ...docSnap.data()
             } as MRTZBalance;
         }
-        
+
         // Return zero balance if doesn't exist
         return {
             playerId,
@@ -226,17 +226,17 @@ export async function getOutstandingBalances(
             where('status', 'in', ['pending', 'confirmed']),
             orderBy('date', 'desc')
         );
-        
+
         const snapshot = await getDocs(q);
         const transactions = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
         } as MRTZLedgerEntry));
-        
+
         // Group by other party
         const owedToMe: Map<string, OutstandingBalance> = new Map();
         const iOwe: Map<string, OutstandingBalance> = new Map();
-        
+
         transactions.forEach(tx => {
             if (tx.toPlayerId === playerId && tx.status !== 'settled') {
                 const otherPlayerId = tx.fromPlayerId || tx.participants.find(p => p !== playerId) || 'unknown';
@@ -257,7 +257,7 @@ export async function getOutstandingBalances(
                 balance.totalAmount += Math.abs(tx.amount);
                 balance.transactionIds.push(tx.transactionId);
             }
-            
+
             if (tx.fromPlayerId === playerId && tx.status !== 'settled') {
                 const otherPlayerId = tx.toPlayerId || tx.participants.find(p => p !== playerId) || 'unknown';
                 if (!iOwe.has(otherPlayerId)) {
@@ -278,10 +278,10 @@ export async function getOutstandingBalances(
                 balance.transactionIds.push(tx.transactionId);
             }
         });
-        
+
         // TODO: Fetch player names for better display
         // For now, return with empty names
-        
+
         return {
             owedToMe: Array.from(owedToMe.values()),
             iOwe: Array.from(iOwe.values())
@@ -299,14 +299,14 @@ export async function getPlayerMRTZSummary(playerId: string): Promise<PlayerMRTZ
     try {
         const balance = await getPlayerBalance(playerId);
         if (!balance) return null;
-        
+
         // Get all transactions for lifetime stats
         const allTransactions = await getPlayerLedger(playerId);
-        
+
         let totalWon = 0;
         let totalLost = 0;
         let totalSettled = 0;
-        
+
         allTransactions.forEach(tx => {
             if (tx.status === 'settled') {
                 totalSettled += Math.abs(tx.amount);
@@ -318,7 +318,7 @@ export async function getPlayerMRTZSummary(playerId: string): Promise<PlayerMRTZ
                 totalLost += Math.abs(tx.amount);
             }
         });
-        
+
         return {
             playerId,
             playerName: '', // Will need to fetch
@@ -353,11 +353,11 @@ export async function markTransactionSettled(
             limit(1)
         );
         const snapshot = await getDocs(q);
-        
+
         if (snapshot.empty) {
             throw new Error('Transaction not found');
         }
-        
+
         const txDoc = snapshot.docs[0];
         await updateDoc(txDoc.ref, {
             status: 'settled',
@@ -366,7 +366,7 @@ export async function markTransactionSettled(
             settledBy,
             updatedAt: Timestamp.now()
         });
-        
+
         // Update balances
         const txData = txDoc.data() as MRTZLedgerEntry;
         await updateBalancesFromTransaction({
@@ -400,19 +400,19 @@ export async function createRoundLedgerEntries(
     const transactionIds: string[] = [];
     const playerIds = players.map(p => p.id);
     const playerMap = new Map(players.map(p => [p.id, p.name]));
-    
+
     try {
         // For group bets, we need to show who paid whom
         // Skins: Winners receive from all players
         // Nassau: Winners receive from all players, losers pay winners
-        
+
         // Create entries for each player's net MRTZ
         for (const [playerId, amount] of Object.entries(roundMRTZ)) {
             if (amount === 0) continue;
-            
+
             const isWin = amount > 0;
             const playerName = playerMap.get(playerId) || playerId;
-            
+
             // Build description
             let description = '';
             if (activeBets.skins?.started) {
@@ -424,25 +424,24 @@ export async function createRoundLedgerEntries(
             } else {
                 description = `Round betting: ${isWin ? 'Won' : 'Lost'} ${Math.abs(amount).toFixed(2)} MRTZ`;
             }
-            
+
             const entry: Omit<MRTZLedgerEntry, 'id' | 'transactionId' | 'createdAt' | 'updatedAt'> = {
                 type: isWin ? 'bet_win' : 'bet_loss',
                 roundId,
                 date: Timestamp.now(),
-                fromPlayerId: isWin ? undefined : playerId,
-                toPlayerId: isWin ? playerId : undefined,
                 participants: playerIds,
                 amount: Math.abs(amount),
                 description,
                 betType: activeBets.skins?.started ? 'skins' : activeBets.nassau?.started ? 'nassau' : 'fundatory',
                 status: 'confirmed',
-                createdBy
+                createdBy,
+                ...(isWin ? { toPlayerId: playerId } : { fromPlayerId: playerId })
             };
-            
+
             const txId = await createLedgerEntry(entry);
             transactionIds.push(txId);
         }
-        
+
         return transactionIds;
     } catch (error) {
         console.error('Error creating round ledger entries:', error);
@@ -460,7 +459,7 @@ export async function getRoundTransactions(roundId: string): Promise<MRTZLedgerE
             where('roundId', '==', roundId),
             orderBy('date', 'desc')
         );
-        
+
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({
             id: doc.id,
@@ -471,4 +470,5 @@ export async function getRoundTransactions(roundId: string): Promise<MRTZLedgerE
         return [];
     }
 }
+
 

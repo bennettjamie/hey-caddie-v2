@@ -42,7 +42,7 @@ export default function UnresolvedBetsModal({ onClose, onResolve }: UnresolvedBe
         const nassauParticipants = activeBets.nassau.participants && activeBets.nassau.participants.length > 0
             ? activeBets.nassau.participants
             : playerIds;
-        
+
         if (nassauResults.front9WinnerId === null) {
             // Find tied players for front 9 (only among participants)
             const front9Scores: { [key: string]: number } = {};
@@ -417,12 +417,12 @@ export default function UnresolvedBetsModal({ onClose, onResolve }: UnresolvedBe
                             if (action === 'exclude' && !settleToday) {
                                 try {
                                     const playerIds = currentRound.players.map((p: any) => p.id);
-                                    
+
                                     // Create skins carry-over if applicable
                                     if (skinsCarryovers.length > 0 && activeBets?.skins?.started) {
                                         const carryOverHoles = skinsCarryovers.map(s => s.holeNumber);
                                         const accumulatedValue = skinsCarryovers.reduce((sum, s) => sum + s.value, 0);
-                                        
+
                                         await createCarryOver(
                                             `round_${Date.now()}`, // Will be updated with actual round ID
                                             'skins',
@@ -437,16 +437,16 @@ export default function UnresolvedBetsModal({ onClose, onResolve }: UnresolvedBe
                                             playerIds[0] || 'system'
                                         );
                                     }
-                                    
+
                                     // Create Nassau carry-over if applicable
                                     if (nassauTies.length > 0 && activeBets?.nassau?.started) {
-                                        const tiedSegments = nassauTies.map(t => 
+                                        const tiedSegments = nassauTies.map(t =>
                                             t.segment === 'Front 9' ? 'front9' :
-                                            t.segment === 'Back 9' ? 'back9' : 'overall'
+                                                t.segment === 'Back 9' ? 'back9' : 'overall'
                                         ) as ('front9' | 'back9' | 'overall')[];
                                         const allTiedPlayers = nassauTies.flatMap(t => t.tiedPlayers);
-                                        const uniqueTiedPlayers = [...new Set(allTiedPlayers)];
-                                        
+                                        const uniqueTiedPlayers = Array.from(new Set(allTiedPlayers));
+
                                         await createCarryOver(
                                             `round_${Date.now()}`,
                                             'nassau',
@@ -466,7 +466,7 @@ export default function UnresolvedBetsModal({ onClose, onResolve }: UnresolvedBe
                                     // Continue anyway
                                 }
                             }
-                            
+
                             onResolve({
                                 action,
                                 settleToday,

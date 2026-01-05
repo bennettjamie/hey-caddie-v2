@@ -10,6 +10,7 @@ import FundatoryModal from '@/components/FundatoryModal';
 import Leaderboard from '@/components/Leaderboard';
 import PlayerCard from '@/components/ui/PlayerCard';
 import VoiceIndicator from '@/components/ui/VoiceIndicator';
+import VoiceWaveform from '@/components/ui/VoiceWaveform';
 import TeeOrderDisplay from '@/components/ui/TeeOrderDisplay';
 import SettingsModal from '@/components/SettingsModal';
 import UnresolvedBetsModal from '@/components/UnresolvedBetsModal';
@@ -25,11 +26,11 @@ import { Player } from '@/lib/players';
 import { FundatoryBet } from '@/lib/betting';
 
 export default function ActiveRound() {
-    const { 
-        currentRound, 
-        activeHole, 
-        updateScore, 
-        setActiveHole, 
+    const {
+        currentRound,
+        activeHole,
+        updateScore,
+        setActiveHole,
         fundatoryBets,
         activeBets = {},
         startSkins,
@@ -50,7 +51,8 @@ export default function ActiveRound() {
         stopHotWordListening,
         transcript,
         lastCommand,
-        lastResponse
+        lastResponse,
+        error: voiceError
     } = useVoice();
     const [showFundatoryModal, setShowFundatoryModal] = useState(false);
     const [showBettingSetup, setShowBettingSetup] = useState(false);
@@ -106,7 +108,7 @@ export default function ActiveRound() {
             const hasScores = currentRound.scores && Object.keys(currentRound.scores).length > 0;
             const onlyHole1Scores = hasScores && Object.keys(currentRound.scores).length === 1 && currentRound.scores[1];
             const noBetsActive = !activeBets?.skins?.started && !activeBets?.nassau?.started;
-            
+
             // Show betting setup if no bets are active and round just started
             if (noBetsActive && (!hasScores || onlyHole1Scores)) {
                 // Small delay to let UI settle
@@ -125,7 +127,7 @@ export default function ActiveRound() {
                 setShowRoundReview(true);
             }
         };
-        
+
         if (typeof window !== 'undefined') {
             window.addEventListener('triggerRoundReview', handleTriggerReview);
             return () => {
@@ -224,7 +226,7 @@ export default function ActiveRound() {
                 if (pendingBet) {
                     // Update bet status - this would need to be implemented in GameContext
                     // For now, just log it
-                    console.log('Fundatory bet result:', pendingBet.id, lastCommand.result);
+                    // Removed console.log'Fundatory bet result:', pendingBet.id, lastCommand.result);
                 }
             }
         } else if (lastCommand.type === 'NEXT_HOLE') {
@@ -272,7 +274,7 @@ export default function ActiveRound() {
         } else if (lastCommand.type === 'UNDO_SCORE') {
             // Remove last score for current hole
             // This would need a more sophisticated undo system
-            console.log('Undo score - feature to be implemented');
+            // Removed console.log'Undo score - feature to be implemented');
         }
     }, [lastCommand, currentRound, activeHole, updateScore, fundatoryBets, nextTee, setTeeOrder, endRound, teeOrder, startSkins, startNassau]);
 
@@ -297,6 +299,14 @@ export default function ActiveRound() {
         let hasCarryovers = false;
         if (activeBets?.skins?.started) {
             const skinsResults = calculateSkins(currentRound.scores, holes, activeBets.skins.value, (activeBets.skins as any).participants);
+
+            // Check if a skin was just won on the active hole
+            const activeHoleSkin = skinsResults.find(s => s.holeNumber === activeHole && !s.isCarryOver && s.winnerId);
+            if (activeHoleSkin) {
+                // Play cash sound if someone WON a skin
+                import('@/lib/audio').then(mod => mod.playSound('skins'));
+            }
+
             hasCarryovers = skinsResults.some(s => s.isCarryOver);
         }
 
@@ -382,9 +392,9 @@ export default function ActiveRound() {
                         <p style={{ color: 'var(--text-light)', fontSize: '0.875rem', margin: 0 }}>
                             {currentRound.course.name}
                         </p>
-                        <p style={{ 
-                            color: 'var(--primary)', 
-                            fontSize: '1rem', 
+                        <p style={{
+                            color: 'var(--primary)',
+                            fontSize: '1rem',
                             margin: '0.5rem 0 0 0',
                             fontWeight: 600
                         }}>
@@ -397,7 +407,11 @@ export default function ActiveRound() {
                     {/* Voice Toggle Button - moved to far right */}
                     <button
                         onClick={() => {
-                            if (isListening || isListeningForHotWord) {
+                            if (voiceError) {
+                                alert(voiceError);
+                                // Try to restart if error is present
+                                startHotWordListening();
+                            } else if (isListening || isListeningForHotWord) {
                                 stopListening();
                                 stopHotWordListening();
                             } else {
@@ -408,7 +422,7 @@ export default function ActiveRound() {
                             padding: '0.5rem 1rem',
                             borderRadius: '8px',
                             border: 'none',
-                            backgroundColor: (isListening || isListeningForHotWord) ? 'var(--primary)' : 'var(--border)',
+                            backgroundColor: voiceError ? 'var(--danger)' : (isListening || isListeningForHotWord) ? 'var(--primary)' : 'var(--border)',
                             color: 'white',
                             cursor: 'pointer',
                             fontSize: '0.875rem',
@@ -419,6 +433,7 @@ export default function ActiveRound() {
                             minHeight: '36px',
                             transition: 'all 0.2s ease'
                         }}
+                        title={voiceError || 'Toggle Voice Assistant'}
                     >
                         <VoiceIndicator
                             isListening={isListening}
@@ -426,11 +441,11 @@ export default function ActiveRound() {
                             size="small"
                         />
                         <span>
-                            {(isListening || isListeningForHotWord) ? 'Voice On' : 'Voice Off'}
+                            {voiceError ? 'Voice Error' : (isListening || isListeningForHotWord) ? 'Voice On' : 'Voice Off'}
                         </span>
                     </button>
                 </div>
-                
+
                 {/* Progress Bar */}
                 <div style={{ marginTop: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-light)' }}>
@@ -453,9 +468,9 @@ export default function ActiveRound() {
 
             {/* Tee Order Display */}
             {teeOrder && teeOrder.length > 0 && (
-                <TeeOrderDisplay 
-                    players={currentRound.players} 
-                    teeOrder={teeOrder} 
+                <TeeOrderDisplay
+                    players={currentRound.players}
+                    teeOrder={teeOrder}
                     currentTeeIndex={currentTeeIndex}
                 />
             )}
@@ -507,35 +522,35 @@ export default function ActiveRound() {
             </div>
 
             <div className="players-grid">
-                    {currentRound.players.map((player: Player) => {
-                        const layoutKey = currentRound.course.selectedLayoutKey || 'default';
-                        const par = currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole]?.par || 3;
-                        const relativeScore = currentRound.scores[activeHole]?.[player.id] ?? null;
-                        const absoluteScore = relativeScore !== null ? par + relativeScore : null;
-                        
-                        // Get recent hole scores for this player (last 3 holes including current)
-                        const recentHoleScores: number[] = [];
-                        for (let i = Math.max(1, activeHole - 2); i <= activeHole; i++) {
-                            const score = currentRound.scores[i]?.[player.id];
-                            if (score !== undefined && score !== null) {
-                                recentHoleScores.push(score);
-                            }
-                        }
+                {currentRound.players.map((player: Player) => {
+                    const layoutKey = currentRound.course.selectedLayoutKey || 'default';
+                    const par = currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole]?.par || 3;
+                    const relativeScore = currentRound.scores[activeHole]?.[player.id] ?? null;
+                    const absoluteScore = relativeScore !== null ? par + relativeScore : null;
 
-                        return (
-                            <PlayerCard
-                                key={player.id}
-                                player={player}
-                                par={par}
-                                relativeScore={relativeScore}
-                                absoluteScore={absoluteScore}
-                                onScoreChange={(change) => handleScoreChange(player.id, change)}
-                                holeNumber={activeHole}
-                                recentHoleScores={recentHoleScores}
-                            />
-                        );
-                    })}
-                </div>
+                    // Get recent hole scores for this player (last 3 holes including current)
+                    const recentHoleScores: number[] = [];
+                    for (let i = Math.max(1, activeHole - 2); i <= activeHole; i++) {
+                        const score = currentRound.scores[i]?.[player.id];
+                        if (score !== undefined && score !== null) {
+                            recentHoleScores.push(score);
+                        }
+                    }
+
+                    return (
+                        <PlayerCard
+                            key={player.id}
+                            player={player}
+                            par={par}
+                            relativeScore={relativeScore}
+                            absoluteScore={absoluteScore}
+                            onScoreChange={(change) => handleScoreChange(player.id, change)}
+                            holeNumber={activeHole}
+                            recentHoleScores={recentHoleScores}
+                        />
+                    );
+                })}
+            </div>
 
             <div style={{ marginTop: '2rem' }}>
                 <Leaderboard />
@@ -550,12 +565,12 @@ export default function ActiveRound() {
             </div>
 
             {/* Settings Button at Bottom */}
-            <div style={{ 
-                position: 'fixed', 
-                bottom: 0, 
-                left: 0, 
-                right: 0, 
-                padding: '1rem', 
+            <div style={{
+                position: 'fixed',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                padding: '1rem',
                 backgroundColor: 'var(--background)',
                 borderTop: '2px solid var(--border)',
                 zIndex: 100
@@ -593,6 +608,55 @@ export default function ActiveRound() {
             )}
 
             <BettingSummary />
+
+            {/* Global Voice FAB */}
+            <div style={{ position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 900, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+                {(isListening || transcript) && (
+                    <div style={{
+                        backgroundColor: 'rgba(0,0,0,0.9)',
+                        color: 'white',
+                        padding: '0.75rem 1rem',
+                        borderRadius: '12px 12px 0 12px',
+                        maxWidth: '250px',
+                        fontSize: '0.9rem',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                        border: '1px solid var(--primary)'
+                    }}>
+                        {isListening && !transcript ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <strong>Listening...</strong>
+                                    <VoiceWaveform isListening={true} height={20} color="var(--primary)" />
+                                </div>
+                                <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>Try: "I got a birdie" or "Start Skins"</span>
+                            </div>
+                        ) : (
+                            transcript
+                        )}
+                    </div>
+                )}
+                <button
+                    onClick={() => isListening ? stopListening() : startListening()}
+                    style={{
+                        width: '64px',
+                        height: '64px',
+                        borderRadius: '50%',
+                        backgroundColor: isListening ? 'var(--danger)' : 'var(--primary)',
+                        color: 'white',
+                        border: 'none',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                        fontSize: '1.75rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        animation: isListening ? 'pulse 1.5s infinite' : 'none',
+                        transition: 'all 0.3s ease'
+                    }}
+                >
+                    {isListening ? '⏹️' : '🎤'}
+                </button>
+            </div>
 
             {/* Modals */}
             {showBettingSetup && <BettingSetupModal onClose={() => setShowBettingSetup(false)} />}
@@ -673,10 +737,10 @@ export default function ActiveRound() {
                         const { calculateRoundMRTZ } = require('@/lib/mrtz');
                         const playerIds = currentRound.players.map((p: Player) => p.id);
                         const skinEntries = finalRoundData.bets?.skins ? Object.entries(finalRoundData.bets.skins) : [];
-                        const firstSkinValue = skinEntries.length > 0 && skinEntries[0][1] ? skinEntries[0][1].value : 0;
+                        const firstSkinValue = skinEntries.length > 0 && skinEntries[0][1] ? (skinEntries[0][1] as any).value : 0;
                         const finalBets = finalRoundData.bets ? {
                             skins: finalRoundData.bets.skins && skinEntries.length > 0
-                                ? { started: true, value: firstSkinValue } 
+                                ? { started: true, value: firstSkinValue }
                                 : undefined,
                             nassau: finalRoundData.bets.nassau ? { started: true, value: 0 } : undefined
                         } : activeBets;
@@ -712,10 +776,10 @@ export default function ActiveRound() {
                         const { calculateRoundMRTZ } = require('@/lib/mrtz');
                         const playerIds = currentRound.players.map((p: Player) => p.id);
                         const skinEntries = finalRoundData.bets?.skins ? Object.entries(finalRoundData.bets.skins) : [];
-                        const firstSkinValue = skinEntries.length > 0 && skinEntries[0][1] ? skinEntries[0][1].value : 0;
+                        const firstSkinValue = skinEntries.length > 0 && skinEntries[0][1] ? (skinEntries[0][1] as any).value : 0;
                         const finalBets = finalRoundData.bets ? {
                             skins: finalRoundData.bets.skins && skinEntries.length > 0
-                                ? { started: true, value: firstSkinValue } 
+                                ? { started: true, value: firstSkinValue }
                                 : undefined,
                             nassau: finalRoundData.bets.nassau ? { started: true, value: 0 } : undefined
                         } : activeBets;
@@ -735,12 +799,16 @@ export default function ActiveRound() {
                 />
             )}
             {showFinalSummary && (
-                <RoundFinalSummary 
+                <RoundFinalSummary
                     finalRoundData={finalRoundData}
                     onClose={() => {
                         setShowFinalSummary(false);
                         setFinalRoundData(null);
-                    }} 
+                        // Redirect to MRTZ/Ledger page after round
+                        if (typeof window !== 'undefined') {
+                            window.location.href = '/mrtz';
+                        }
+                    }}
                 />
             )}
         </div>

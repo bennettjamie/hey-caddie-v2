@@ -393,3 +393,4 @@ const course = useMemo(() => currentRound?.course || null, [currentRound?.course
 ---
 
 **Next Steps**: Prioritize removing debug code and improving type safety, as these are quick wins that will improve code quality significantly.
+

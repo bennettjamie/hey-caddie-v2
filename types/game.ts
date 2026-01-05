@@ -5,7 +5,9 @@
 
 import { Course } from './firestore';
 import { Player } from '@/lib/players';
+export type { Player };
 import { FundatoryBet, NassauResult } from '@/lib/betting';
+export type { NassauResult };
 
 /**
  * Represents an active round in memory (different from Firestore Round)
@@ -40,13 +42,15 @@ export interface RoundResolution {
  */
 export interface FinalRoundData extends GameRound {
     bets: {
-        skins: { [holeNumber: number]: {
-            winnerId?: string;
-            value: number;
-            carryOver: boolean;
-            push?: boolean;
-            tiedPlayers?: string[];
-        } };
+        skins: {
+            [holeNumber: number]: {
+                winnerId?: string;
+                value: number;
+                carryOver: boolean;
+                push?: boolean;
+                tiedPlayers?: string[];
+            }
+        };
         nassau: NassauResult | null;
         fundatory: FundatoryBet[];
         mrtzResults: { [playerId: string]: number };

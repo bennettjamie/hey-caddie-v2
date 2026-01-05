@@ -3,19 +3,19 @@
  */
 
 import { db } from './firebase';
-import { 
-    collection, 
-    addDoc, 
-    getDocs, 
-    doc, 
-    getDoc, 
-    updateDoc, 
+import {
+    collection,
+    addDoc,
+    getDocs,
+    doc,
+    getDoc,
+    updateDoc,
     deleteDoc,
-    query, 
-    where, 
-    orderBy, 
+    query,
+    where,
+    orderBy,
     limit,
-    Timestamp 
+    Timestamp
 } from 'firebase/firestore';
 import { queueOperation, isOnline } from './syncQueue';
 
@@ -86,7 +86,7 @@ export async function getPlayer(playerId: string): Promise<Player | null> {
     try {
         const docRef = doc(db, PLAYERS_COLLECTION, playerId);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
             return {
                 id: docSnap.id,
@@ -110,7 +110,7 @@ export async function getAllPlayers(limitCount: number = 100): Promise<Player[]>
             orderBy('name', 'asc'),
             limit(limitCount)
         );
-        
+
         const querySnapshot = await getDocs(q);
         return querySnapshot.docs.map(doc => ({
             id: doc.id,
@@ -127,13 +127,45 @@ export async function getAllPlayers(limitCount: number = 100): Promise<Player[]>
  */
 export async function searchPlayers(searchTerm: string): Promise<Player[]> {
     try {
-        const allPlayers = await getAllPlayers();
         const lowerSearch = searchTerm.toLowerCase();
-        return allPlayers.filter(
-            (player) =>
-                player.name.toLowerCase().includes(lowerSearch) ||
-                player.email?.toLowerCase().includes(lowerSearch)
+
+        // Firestore doesn't support native partial matching easily without third-party services like Algolia.
+        // However, we can optimize by using 'startAt' and 'endAt' for prefix matching if we had a normalized 'searchName' field.
+        // For now, since we don't have that, let's limit the download to reasonably recently active players or just fetch all 
+        // IF the collection is small. But user says it is slow.
+
+        // IMPROVEMENT: Limit to 100 recent players and filter locally, OR use a prefix query if possible.
+        // Let's implement a prefix query on 'name' as a best-effort optimization.
+        // Note: This is case-sensitive usually.
+
+        const q = query(
+            collection(db, PLAYERS_COLLECTION),
+            orderBy('name'),
+            where('name', '>=', searchTerm),
+            where('name', '<=', searchTerm + '\uf8ff'),
+            limit(20)
         );
+
+        const querySnapshot = await getDocs(q);
+        const results = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        })) as Player[];
+
+        // Fallback: If case-sensitive prefix query returns nothing, try fetching recent players
+        // This handles cases where user types "jo" but name is "John". 
+        // (Firestore 'startAt' is case sensitive).
+        if (results.length === 0 && searchTerm.length > 2) {
+            // Fallback to fetching a batch of players. 
+            // Ideally we should have a 'searchName' lowercase field.
+            const allQ = query(collection(db, PLAYERS_COLLECTION), limit(100));
+            const allSnap = await getDocs(allQ);
+            return allSnap.docs
+                .map(doc => ({ id: doc.id, ...doc.data() } as Player))
+                .filter(p => p.name.toLowerCase().includes(lowerSearch));
+        }
+
+        return results;
     } catch (error) {
         console.error('Error searching players:', error);
         return [];
@@ -150,7 +182,7 @@ export async function getPlayersByUserId(userId: string): Promise<Player[]> {
             where('userId', '==', userId),
             orderBy('name', 'asc')
         );
-        
+
         const querySnapshot = await getDocs(q);
         return querySnapshot.docs.map(doc => ({
             id: doc.id,
@@ -201,15 +233,15 @@ export async function updatePlayerStats(playerId: string, roundScore: number): P
 
         const currentStats = player.stats || { roundsPlayed: 0, averageScore: 0 };
         const newRoundsPlayed = currentStats.roundsPlayed + 1;
-        const newAverageScore = 
+        const newAverageScore =
             (currentStats.averageScore * currentStats.roundsPlayed + roundScore) / newRoundsPlayed;
 
         const updates: Partial<Player> = {
             stats: {
                 roundsPlayed: newRoundsPlayed,
                 averageScore: Math.round(newAverageScore * 100) / 100, // Round to 2 decimals
-                bestRound: currentStats.bestRound 
-                    ? Math.min(currentStats.bestRound, roundScore) 
+                bestRound: currentStats.bestRound
+                    ? Math.min(currentStats.bestRound, roundScore)
                     : roundScore
             }
         };
@@ -260,7 +292,7 @@ export async function getOrCreatePlayerByName(name: string, userId?: string): Pr
         // Search for existing player
         const existing = await searchPlayers(name);
         const exactMatch = existing.find(p => p.name.toLowerCase() === name.toLowerCase());
-        
+
         if (exactMatch) {
             return exactMatch;
         }

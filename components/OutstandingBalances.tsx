@@ -35,7 +35,7 @@ export default function OutstandingBalances({ playerId, onClose }: OutstandingBa
         try {
             const balancesData = await getOutstandingBalances(playerId);
             setBalances(balancesData);
-            
+
             // Fetch player names
             const allPlayers = await getAllPlayers(100);
             const namesMap: { [key: string]: string } = {};
@@ -67,16 +67,16 @@ export default function OutstandingBalances({ playerId, onClose }: OutstandingBa
             } else if (settlementType === 'agreed_void') {
                 settlementMethod.notes = 'Both parties agreed to void';
             }
-            
+
             await createSettlementFromBalances(
                 fromPlayerId,
                 toPlayerId,
                 transactionIds,
                 settlementType === 'agreed_void' ? 'agreed_void' : settlementType,
-                settlementMethod,
-                playerId
+                playerId,
+                settlementMethod
             );
-            
+
             setSelectedSettlement(null);
             loadBalances(); // Refresh
         } catch (error) {
@@ -305,7 +305,7 @@ export default function OutstandingBalances({ playerId, onClose }: OutstandingBa
 
                         <div style={{ marginBottom: '1rem' }}>
                             <div style={{ fontSize: '0.875rem', color: 'var(--text-light)', marginBottom: '0.5rem' }}>
-                                {selectedSettlement.type === 'owedToMe' 
+                                {selectedSettlement.type === 'owedToMe'
                                     ? `${playerNames[selectedSettlement.otherPlayerId] || selectedSettlement.otherPlayerId} owes you`
                                     : `You owe ${playerNames[selectedSettlement.otherPlayerId] || selectedSettlement.otherPlayerId}`}
                             </div>
@@ -419,4 +419,5 @@ export default function OutstandingBalances({ playerId, onClose }: OutstandingBa
         </div>
     );
 }
+
 

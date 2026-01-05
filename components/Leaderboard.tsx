@@ -19,7 +19,7 @@ export default function Leaderboard() {
     players.forEach((player: any) => {
         playerTotals[player.id] = { total: 0, holesPlayed: 0 };
         Object.keys(scores).forEach((holeNum) => {
-            const holeScores = scores[holeNum];
+            const holeScores = scores[parseInt(holeNum)];
             if (holeScores && holeScores[player.id] !== undefined) {
                 playerTotals[player.id].total += holeScores[player.id];
                 playerTotals[player.id].holesPlayed++;
@@ -59,7 +59,7 @@ export default function Leaderboard() {
                 {sortedPlayers.map((player: any, index: number) => {
                     const stats = playerTotals[player.id];
                     const isLeading = index === 0;
-                    
+
                     return (
                         <div
                             key={player.id}
@@ -125,6 +125,7 @@ export default function Leaderboard() {
         </div>
     );
 }
+
 
 
 

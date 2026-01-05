@@ -16,9 +16,9 @@ export default function CourseImporter() {
         try {
             setImporting(true);
             setResult(null);
-            
+
             const courses: DGCourseReviewCourse[] = JSON.parse(jsonInput);
-            
+
             if (!Array.isArray(courses)) {
                 setResult({
                     success: 0,
@@ -27,16 +27,16 @@ export default function CourseImporter() {
                 });
                 return;
             }
-            
+
             // Call API route
             const response = await fetch('/api/courses/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ courses })
             });
-            
+
             const data = await response.json();
-            
+
             if (response.ok) {
                 setResult(data);
                 setJsonInput(''); // Clear input on success
@@ -73,12 +73,12 @@ export default function CourseImporter() {
 
     return (
         <div className="card">
-            <h2>Import Courses from dgcoursereview.com</h2>
+            <h2>Import Courses from Web Search</h2>
             <p style={{ marginTop: '0.5rem', color: 'var(--text-light)', fontSize: '0.875rem' }}>
-                Paste JSON data from dgcoursereview.com API or scraped data. 
-                Courses with the same dgcoursereviewId will be updated.
+                Paste JSON data from external API or scraped data.
+                Courses with the same source ID will be updated.
             </p>
-            
+
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <label style={{ cursor: 'pointer' }}>
                     <input
@@ -92,7 +92,7 @@ export default function CourseImporter() {
                     </span>
                 </label>
             </div>
-            
+
             <textarea
                 value={jsonInput}
                 onChange={(e) => setJsonInput(e.target.value)}
@@ -109,7 +109,7 @@ export default function CourseImporter() {
                     resize: 'vertical'
                 }}
             />
-            
+
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <button
                     className="btn"
@@ -131,14 +131,14 @@ export default function CourseImporter() {
                     })()}
                 </button>
             </div>
-            
+
             {result && (
-                <div style={{ 
-                    marginTop: '1rem', 
-                    padding: '1rem', 
-                    background: result.failed === 0 
-                        ? 'rgba(46, 204, 113, 0.1)' 
-                        : 'rgba(243, 156, 18, 0.1)', 
+                <div style={{
+                    marginTop: '1rem',
+                    padding: '1rem',
+                    background: result.failed === 0
+                        ? 'rgba(46, 204, 113, 0.1)'
+                        : 'rgba(243, 156, 18, 0.1)',
                     borderRadius: '8px',
                     border: `2px solid ${result.failed === 0 ? 'var(--success)' : 'var(--warning)'}`
                 }}>
@@ -165,11 +165,11 @@ export default function CourseImporter() {
                     )}
                 </div>
             )}
-            
+
             <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(52, 152, 219, 0.1)', borderRadius: '8px', fontSize: '0.875rem' }}>
                 <strong>Example JSON format:</strong>
                 <pre style={{ marginTop: '0.5rem', fontSize: '0.75rem', overflow: 'auto' }}>
-{`[
+                    {`[
   {
     "id": "12345",
     "name": "Kiwi Park",

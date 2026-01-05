@@ -32,10 +32,10 @@ export default function MRTZLedgerView({ playerId, onClose }: MRTZLedgerViewProp
                 getPlayerBalance(playerId),
                 getAllPlayers(100)
             ]);
-            
+
             setTransactions(ledgerData);
             setBalance(balanceData);
-            
+
             const namesMap: { [key: string]: string } = {};
             allPlayers.forEach(p => {
                 namesMap[p.id] = p.name;
@@ -202,15 +202,15 @@ export default function MRTZLedgerView({ playerId, onClose }: MRTZLedgerViewProp
                         const isWin = tx.toPlayerId === playerId;
                         const otherPlayerId = isWin ? tx.fromPlayerId : tx.toPlayerId;
                         const otherPlayerName = otherPlayerId ? (playerNames[otherPlayerId] || otherPlayerId) : 'Multiple Players';
-                        
+
                         return (
                             <div
                                 key={tx.id}
                                 style={{
                                     padding: '1rem',
-                                    backgroundColor: isWin ? 'rgba(46, 204, 113, 0.1)' : 'rgba(231, 76, 60, 0.1)',
-                                    borderRadius: '8px',
-                                    border: `1px solid ${isWin ? 'var(--success)' : 'var(--danger)'}`
+                                    backgroundColor: isWin ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: `1px solid ${isWin ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
                                 }}
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
@@ -264,7 +264,7 @@ export default function MRTZLedgerView({ playerId, onClose }: MRTZLedgerViewProp
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 {tx.settlementDetails && (
                                     <div style={{
                                         marginTop: '0.5rem',
@@ -273,8 +273,8 @@ export default function MRTZLedgerView({ playerId, onClose }: MRTZLedgerViewProp
                                         borderRadius: '4px',
                                         fontSize: '0.75rem'
                                     }}>
-                                        {tx.settlementDetails.moneyAmount && (
-                                            <div>Settled with ${tx.settlementDetails.moneyAmount.toFixed(2)}</div>
+                                        {tx.settlementDetails.amount && (
+                                            <div>Settled with ${tx.settlementDetails.amount.toFixed(2)}</div>
                                         )}
                                         {tx.settlementDetails.goodDeedId && (
                                             <div>Settled via good deed</div>
@@ -289,4 +289,5 @@ export default function MRTZLedgerView({ playerId, onClose }: MRTZLedgerViewProp
         </div>
     );
 }
+
 

@@ -13,6 +13,8 @@ interface PlayerCardProps {
     recentHoleScores?: number[]; // Last 3 holes' relative scores for this player
 }
 
+import { playSound } from '@/lib/audio';
+
 export default function PlayerCard({
     player,
     par,
@@ -28,82 +30,82 @@ export default function PlayerCard({
     const [showSnowmanAnimation, setShowSnowmanAnimation] = useState(false);
     const [showBirdieAnimation, setShowBirdieAnimation] = useState(false);
     const [showTurkeyAnimation, setShowTurkeyAnimation] = useState(false);
+    
+    // Track previous score to detect new entries
     const prevAbsoluteScore = React.useRef<number | null>(null);
-    const prevRelativeScore = React.useRef<number | null>(null);
 
-    // Calculate score color based on relative and absolute score
+    useEffect(() => {
+        // Only trigger on new score entry (prev was null, now has value)
+        if (hasScore && absoluteScore !== null && prevAbsoluteScore.current === null) {
+            
+            // Hole-in-One
+            if (absoluteScore === 1) {
+                setShowHoleInOneAnimation(true);
+                playSound('hole_in_one');
+                setTimeout(() => setShowHoleInOneAnimation(false), 3000);
+            }
+            // Snowman (8)
+            else if (absoluteScore === 8) {
+                setShowSnowmanAnimation(true);
+                playSound('snowman');
+                setTimeout(() => setShowSnowmanAnimation(false), 2000);
+            }
+            // Birdie (-1) or better
+            else if (relativeScore !== null && relativeScore <= -1) {
+                // Check for Turkey (3 birdies/eagles in a row)
+                // recentHoleScores includes the current hole at the end
+                // We need 3 scores <= -1
+                const isTurkey = recentHoleScores.length >= 3 && 
+                               recentHoleScores.slice(-3).every(s => s <= -1);
+
+                if (isTurkey) {
+                    setShowTurkeyAnimation(true);
+                    playSound('turkey');
+                    setTimeout(() => setShowTurkeyAnimation(false), 3000);
+                } else {
+                    setShowBirdieAnimation(true);
+                    playSound('birdie');
+                    setTimeout(() => setShowBirdieAnimation(false), 2000);
+                }
+            }
+        }
+        
+        // Update ref
+        prevAbsoluteScore.current = absoluteScore;
+    }, [absoluteScore, relativeScore, hasScore, recentHoleScores]);
+
+    // Updated Score Colors to match Emerald Theme
     const getScoreColor = (relScore: number | null, absScore: number | null, holePar: number): string => {
         if (relScore === null) return 'var(--text)';
-        
+
         // Special cases
-        if (absScore === 1) return '#ff0000'; // Hole-in-one (bright red)
-        if (absScore === 8) return '#34495e'; // Snowman (dark gray)
-        
+        if (absScore === 1) return '#F59E0B'; // Hole-in-one (Amber/Gold)
+        if (absScore === 8) return '#94A3B8'; // Snowman (Slate Gray)
+
         // Relative to par
-        if (relScore <= -2) return '#ff3333'; // Double eagle/eagle (bright red)
-        if (relScore === -1) return '#e74c3c'; // Birdie (red)
-        if (relScore === 0) return 'var(--success)'; // Par (current green)
-        if (relScore === 1) return '#27ae60'; // Bogey (green)
-        if (relScore === 2) return '#1e8449'; // Double bogey (darker green)
-        if (relScore >= 3) return '#196f3d'; // Triple+ bogey (darkest green)
-        
+        if (relScore <= -2) return '#10B981'; // Eagle (Bright Emerald)
+        if (relScore === -1) return '#34D399'; // Birdie (Light Emerald)
+        if (relScore === 0) return '#F8FAFC'; // Par (White)
+        if (relScore === 1) return '#FCA5A5'; // Bogey (Soft Red)
+        if (relScore >= 2) return '#EF4444'; // Double+ (Bright Red)
+
         return 'var(--text)';
     };
 
-    // Trigger animations when score changes
-    useEffect(() => {
-        if (absoluteScore !== null && absoluteScore !== prevAbsoluteScore.current) {
-            if (absoluteScore === 1) {
-                setShowHoleInOneAnimation(true);
-                setTimeout(() => setShowHoleInOneAnimation(false), 2000);
-            }
-            if (absoluteScore === 8) {
-                setShowSnowmanAnimation(true);
-                setTimeout(() => setShowSnowmanAnimation(false), 2000);
-            }
-            prevAbsoluteScore.current = absoluteScore;
-        }
-    }, [absoluteScore]);
-
-    // Check for birdie and Turkey animations (3 consecutive birdies across holes)
-    useEffect(() => {
-        if (relativeScore === -1) {
-            // Always show birdie animation when a birdie is scored
-            // Check for Turkey (3 consecutive birdies on last 3 holes)
-            if (recentHoleScores.length >= 3 && recentHoleScores.slice(-3).every(score => score === -1)) {
-                setShowTurkeyAnimation(true);
-                // Play gobble gobble sound
-                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                    const utterance = new SpeechSynthesisUtterance('gobble gobble');
-                    utterance.rate = 0.8;
-                    utterance.pitch = 1.2;
-                    speechSynthesis.speak(utterance);
-                }
-                setTimeout(() => setShowTurkeyAnimation(false), 3000);
-            } else if (relativeScore !== prevRelativeScore.current) {
-                // Single birdie (only animate when score changes, not on every render)
-                setShowBirdieAnimation(true);
-                setTimeout(() => setShowBirdieAnimation(false), 2000);
-            }
-            prevRelativeScore.current = relativeScore;
-        } else {
-            // Reset animations when not a birdie
-            prevRelativeScore.current = relativeScore;
-        }
-    }, [relativeScore, recentHoleScores]);
-    
     const scoreColor = getScoreColor(relativeScore, absoluteScore, par);
-    
+
+    // Card Style: Dark Surface, Subtle Border
     const cardStyle: React.CSSProperties = {
-        border: `2px solid ${hasScore ? 'var(--primary)' : 'var(--warning)'}`,
-        backgroundColor: hasScore ? 'rgba(46, 204, 113, 0.1)' : 'rgba(243, 156, 18, 0.1)',
-        borderRadius: '16px',
-        padding: '1.5rem',
-        transition: 'all 0.2s ease',
-        cursor: onCardClick ? 'pointer' : 'default'
+        border: `1px solid ${hasScore ? 'var(--primary-dark)' : 'var(--border)'}`,
+        backgroundColor: hasScore ? 'rgba(16, 185, 129, 0.05)' : 'var(--card-bg)',
+        borderRadius: 'var(--radius-lg)',
+        padding: '1.25rem',
+        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        cursor: onCardClick ? 'pointer' : 'default',
+        boxShadow: hasScore ? '0 4px 12px -2px rgba(16, 185, 129, 0.1)' : 'var(--shadow-sm)'
     };
 
-    const scoreDisplay = hasScore && absoluteScore !== null ? absoluteScore : '-';
+
     const relativeDisplay = hasScore
         ? relativeScore === 0
             ? 'E'
@@ -111,7 +113,7 @@ export default function PlayerCard({
                 ? `+${relativeScore}`
                 : relativeScore
         : `Par ${par}`;
-    
+
     // Determine if we should show special display for hole-in-one or snowman
     const isHoleInOne = absoluteScore === 1;
     const isSnowman = absoluteScore === 8;
@@ -145,7 +147,21 @@ export default function PlayerCard({
                 >
                     −
                 </button>
-                <div style={{ textAlign: 'center', flex: 1 }}>
+                <div
+                    style={{
+                        textAlign: 'center',
+                        flex: 1,
+                        cursor: 'pointer',
+                        userSelect: 'none'
+                    }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        // If no score set, confirm Par (change 0)
+                        if (!hasScore) {
+                            onScoreChange(0);
+                        }
+                    }}
+                >
                     {/* Par X label */}
                     <span
                         style={{
@@ -165,27 +181,30 @@ export default function PlayerCard({
                             fontWeight: 'bold',
                             display: 'block',
                             lineHeight: 1.2,
-                            color: scoreColor,
-                            animation: showHoleInOneAnimation ? 'holeInOnePulse 1s ease-in-out' : 
-                                      showSnowmanAnimation ? 'snowmanBounce 1s ease-in-out' :
-                                      showTurkeyAnimation ? 'turkeyCelebration 2s ease-in-out' :
-                                      showBirdieAnimation ? 'birdieFly 1.5s ease-in-out' : 'none',
-                            position: 'relative'
+                            color: hasScore ? scoreColor : 'var(--text-light)', // Faint if not set
+                            opacity: hasScore ? 1 : 0.5, // Faint look
+                            animation: showHoleInOneAnimation ? 'holeInOnePulse 1s ease-in-out' :
+                                showSnowmanAnimation ? 'snowmanBounce 1s ease-in-out' :
+                                    showTurkeyAnimation ? 'turkeyCelebration 2s ease-in-out' :
+                                        showBirdieAnimation ? 'birdieFly 1.5s ease-in-out' : 'none',
+                            position: 'relative',
+                            transition: 'all 0.2s ease'
                         }}
                     >
                         {isHoleInOne && showHoleInOneAnimation && '🎯'}
                         {isSnowman && showSnowmanAnimation && '⛄'}
                         {showTurkeyAnimation && '🦃'}
                         {showBirdieAnimation && !showTurkeyAnimation && '🐦'}
-                        {scoreDisplay}
+                        {hasScore && absoluteScore !== null ? absoluteScore : par}
                     </span>
                     <span
                         style={{
                             fontSize: '0.9rem',
-                            color: scoreColor,
+                            color: hasScore ? scoreColor : 'var(--text-light)',
                             marginTop: '0.25rem',
                             display: 'block',
-                            fontWeight: hasScore ? 500 : 400
+                            fontWeight: hasScore ? 500 : 400,
+                            opacity: hasScore ? 1 : 0.5
                         }}
                     >
                         {relativeDisplay}

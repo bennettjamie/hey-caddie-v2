@@ -1,22 +1,28 @@
 :root {
-  /* Colors */
-  --primary: #2ecc71;
-  --primary-dark: #27ae60;
-  --primary-light: #58d68d;
-  --warning: #f39c12;
-  --warning-dark: #d68910;
-  --danger: #e74c3c;
-  --info: #3498db;
-  --success: #2ecc71;
+  /* Colors - Premium Dark Theme Default */
+  /* Main Background: Deep Slate */
+  --background: #0F172A; 
+  /* Card Background: Lighter Slate */
+  --card-bg: #1E293B;
+  /* Text: Off-white for high readability */
+  --text: #F8FAFC;
+  --text-light: #94A3B8;
   
-  /* Backgrounds */
-  --background: #f5f6fa;
-  --card-bg: #ffffff;
-  --text: #2c3e50;
-  --text-light: #7f8c8d;
-  --border: #dcdde1;
-  --border-light: #ecf0f1;
-  
+  /* Accents */
+  --primary: #10B981;    /* Emerald Green - Action/Success */
+  --primary-dark: #059669;
+  --primary-light: #34D399;
+  --secondary: #3B82F6;  /* Blue - Info */
+  --warning: #F59E0B;    /* Amber - Warning/Par */
+  --danger: #EF4444;     /* Red - Error/Bogey */
+  --info: #3B82F6;       /* Blue alias */
+  --success: #10B981;    /* Green alias */
+
+  /* Surface Colors for inputs/borders */
+  --border: #334155;
+  --border-light: #475569;
+  --input-bg: #334155;
+
   /* Spacing */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
@@ -25,7 +31,7 @@
   --spacing-xl: 2rem;
   
   /* Typography */
-  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -33,34 +39,20 @@
   --font-size-xl: 1.5rem;
   --font-size-2xl: 2rem;
   
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.15);
+  /* Shadows - tailored for dark mode depth */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
   
-  /* Border radius */
+  /* Radius */
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-md: 12px;
+  --radius-lg: 16px; 
   --radius-full: 9999px;
   
   /* Transitions */
   --transition-fast: 0.15s ease;
   --transition-base: 0.2s ease;
-  --transition-slow: 0.3s ease;
-}
-
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #1a1a1a;
-    --card-bg: #2d2d2d;
-    --text: #e0e0e0;
-    --text-light: #a0a0a0;
-    --border: #404040;
-    --border-light: #333333;
-  }
 }
 
 * {
@@ -79,61 +71,68 @@ body {
 
 .container {
   max-width: 600px;
-  /* Mobile focused */
   margin: 0 auto;
   padding: 1rem;
 }
 
-h1,
-h2,
-h3 {
+h1, h2, h3 {
   font-weight: 700;
   margin-bottom: 0.5rem;
   color: var(--text);
+  letter-spacing: -0.025em;
 }
 
+/* Button Styling - Premium Touch */
 .btn {
-  background: var(--text);
-  color: white;
-  border: none;
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
   padding: 0.75rem 1.5rem;
   border-radius: var(--radius-md);
   font-weight: 600;
   cursor: pointer;
   font-size: var(--font-size-base);
   transition: all var(--transition-base);
-  min-height: 44px; /* Touch target size */
+  min-height: 50px; /* Strong touch target */
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   box-shadow: var(--shadow-sm);
 }
 
-.btn:hover {
-  opacity: 0.9;
+.btn:hover:not(:disabled) {
+  background: var(--border);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
 }
 
-.btn:active {
-  transform: translateY(0);
-  box-shadow: var(--shadow-sm);
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  transform: none;
 }
 
 .btn-primary {
-  background-color: var(--primary);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
 }
 
 .btn-warning {
-  background-color: var(--warning);
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #fff;
 }
 
+/* Card Styling - Elevated Surface */
 .card {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -141,34 +140,34 @@ h3 {
   padding: var(--spacing-lg);
   margin-bottom: var(--spacing-md);
   box-shadow: var(--shadow-md);
-  transition: all var(--transition-base);
 }
 
-.card:hover {
-  box-shadow: var(--shadow-lg);
-}
-
-.input,
-.select {
-  background: white;
+/* Inputs */
+.input, .select {
+  background: var(--input-bg);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 0.75rem;
-  border-radius: 8px;
+  padding: 0.875rem;
+  border-radius: var(--radius-md);
   width: 100%;
   font-size: 1rem;
-  margin-top: 0.5rem;
+  outline: none;
+  transition: border-color 0.2s;
 }
 
+.input:focus, .select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+/* Grid Layouts */
 .players-grid {
   display: grid;
   grid-template-columns: 1fr;
-  /* Stack vertically on mobile for better focus */
   gap: var(--spacing-md);
   margin-top: var(--spacing-md);
 }
 
-/* Responsive grid for larger screens */
 @media (min-width: 768px) {
   .players-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -177,145 +176,39 @@ h3 {
 
 /* Animations */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.fade-in {
-  animation: fadeIn var(--transition-slow) ease-out;
-}
+.fade-in { animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--background); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-full); }
 
-::-webkit-scrollbar-track {
-  background: var(--background);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: var(--radius-full);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-light);
-}
-
-/* Mobile Optimizations */
+/* Mobile Optimization */
 @media (max-width: 768px) {
-  /* Ensure minimum font size for readability */
-  body {
-    font-size: 16px; /* Prevents zoom on iOS */
+  body { font-size: 16px; } /* Prevent iOS zoom */
+  
+  .container { padding: 0.75rem; }
+  
+  .card { 
+    padding: 1.25rem; 
+    border-radius: var(--radius-lg); 
   }
-
-  /* Larger touch targets for mobile */
+  
   .btn {
-    min-height: 48px; /* Increased from 44px for easier tapping */
-    padding: 0.875rem 1.25rem;
-    font-size: 1rem;
+    min-height: 52px; /* Large touch target */
+    font-size: 1.05rem;
   }
-
-  /* Better spacing on mobile */
-  .container {
-    padding: 0.75rem;
-  }
-
-  .card {
-    padding: var(--spacing-md);
-    margin-bottom: var(--spacing-sm);
-  }
-
-  /* Larger text for better readability */
-  h1 {
-    font-size: 1.75rem;
-  }
-
-  h2 {
-    font-size: 1.5rem;
-  }
-
-  h3 {
-    font-size: 1.25rem;
-  }
-
-  /* Better input sizing for mobile */
-  .input,
-  .select {
-    font-size: 16px; /* Prevents zoom on iOS */
-    padding: 0.875rem;
-    min-height: 48px;
-  }
-
-  /* Improved spacing for player cards */
-  .players-grid {
-    gap: var(--spacing-sm);
-  }
-
-  /* Better modal sizing on mobile */
-  [role="dialog"],
-  .modal {
-    width: 100% !important;
+  
+  /* Taller inputs */
+  .input, .select { min-height: 50px; }
+  
+  /* Make modals fill screen gracefully */
+  [role="dialog"] {
     max-width: 100% !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    max-height: 100vh !important;
-  }
-}
-
-/* Touch device optimizations */
-@media (hover: none) and (pointer: coarse) {
-  /* Remove hover effects on touch devices */
-  .btn:hover {
-    transform: none;
-    opacity: 1;
-  }
-
-  .card:hover {
-    box-shadow: var(--shadow-md);
-  }
-
-  /* Better tap feedback */
-  .btn:active {
-    transform: scale(0.98);
-    opacity: 0.8;
-  }
-}
-
-/* Very small screens */
-@media (max-width: 375px) {
-  .container {
-    padding: 0.5rem;
-  }
-
-  .card {
-    padding: var(--spacing-sm);
-  }
-
-  h1 {
-    font-size: 1.5rem;
-  }
-
-  h2 {
-    font-size: 1.25rem;
-  }
-}
-
-/* Landscape mobile optimization */
-@media (max-width: 768px) and (orientation: landscape) {
-  .container {
-    padding: 0.5rem;
-  }
-
-  .card {
-    padding: var(--spacing-sm);
+    border-radius: 20px 20px 0 0 !important;
   }
 }

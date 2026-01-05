@@ -19,27 +19,43 @@ export async function getCourse(courseId: string): Promise<Course | null> {
     }
 }
 
+let activeFetchPromise: Promise<Course[]> | null = null;
+
 export async function getAllCourses(): Promise<Course[]> {
     try {
+        // Return active promise if one exists to deduplicate requests
+        if (activeFetchPromise) {
+            return activeFetchPromise;
+        }
+
         // Add timeout for Firebase operations
         const timeoutPromise = new Promise<Course[]>((_, reject) => {
-            setTimeout(() => reject(new Error('Firebase query timed out')), 8000);
+            setTimeout(() => reject(new Error('Firebase query timed out')), 30000);
         });
-        
-        const coursesPromise = getDocs(collection(db, 'courses')).then(snapshot => 
-            snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Course[]
-        );
-        
-        const courses = await Promise.race([coursesPromise, timeoutPromise]);
-        
+
+        const fetchPromise = (async () => {
+            try {
+                const snapshot = await getDocs(collection(db, 'courses'));
+                return snapshot.docs.map((doc) => ({
+                    id: doc.id,
+                    ...doc.data()
+                })) as Course[];
+            } catch (err) {
+                throw err;
+            } finally {
+                activeFetchPromise = null;
+            }
+        })();
+
+        activeFetchPromise = fetchPromise;
+
+        const courses = await Promise.race([fetchPromise, timeoutPromise]);
+
         // Update local cache with fresh data
         if (typeof window !== 'undefined' && courses.length > 0) {
             saveLocalCourses(courses);
         }
-        
+
         return courses;
     } catch (error) {
         console.error('Error getting courses from Firebase:', error);
@@ -64,15 +80,15 @@ export async function searchCourses(searchTerm: string): Promise<Course[]> {
 }
 
 export async function createCourse(course: Omit<Course, 'id'>): Promise<string> {
-    
+
     // Create a timeout promise
     const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Firebase operation timed out after 10 seconds')), 10000);
     });
-    
+
     try {
         const courseRef = doc(collection(db, 'courses'));
-        
+
         // Race between setDoc and timeout
         await Promise.race([
             setDoc(courseRef, course),
@@ -81,7 +97,7 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
         return courseRef.id;
     } catch (error: any) {
         console.error('Error creating course:', error);
-        
+
         // Fallback to localStorage if Firebase fails
         if (typeof window !== 'undefined') {
             const localCourses = getLocalCourses();
@@ -89,10 +105,9 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
             const newCourseWithId = { id: newId, ...course } as Course;
             localCourses.push(newCourseWithId);
             saveLocalCourses(localCourses);
-            console.log('Saved course to localStorage as fallback:', newId);
             return newId;
         }
-        
+
         throw error;
     }
 }
@@ -119,12 +134,12 @@ export async function addCourseLayout(courseId: string, layoutId: string, layout
     try {
         const course = await getCourse(courseId);
         if (!course) throw new Error('Course not found');
-        
+
         const updatedLayouts = {
             ...course.layouts,
             [layoutId]: layout
         };
-        
+
         await updateDoc(doc(db, 'courses', courseId), {
             layouts: updatedLayouts
         });
@@ -170,16 +185,16 @@ export async function findCoursesNearLocation(
 ): Promise<Course[]> {
     try {
         const allCourses = await getAllCourses();
-        
+
         // Filter courses that have coordinates
         const coursesWithCoords = allCourses.filter(c => c.lat !== undefined && c.lng !== undefined);
-        
+
         // Calculate distance for each course
         const coursesWithDistance = coursesWithCoords.map(course => ({
             course,
             distance: calculateDistance(lat, lng, course.lat!, course.lng!)
         }));
-        
+
         // Filter by radius and sort by distance
         return coursesWithDistance
             .filter(({ distance }) => distance <= radiusKm)
@@ -196,7 +211,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     const R = 6371; // Radius of the Earth in km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
+    const a =
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
         Math.sin(dLon / 2) * Math.sin(dLon / 2);
@@ -216,10 +231,10 @@ export async function updateCourseHolePar(
     try {
         const course = await getCourse(courseId);
         if (!course) throw new Error('Course not found');
-        
+
         const layout = course.layouts?.[layoutId];
         if (!layout) throw new Error('Layout not found');
-        
+
         const updatedHoles = {
             ...layout.holes,
             [holeNumber]: {
@@ -227,18 +242,18 @@ export async function updateCourseHolePar(
                 par: newPar
             }
         };
-        
+
         const updatedLayout: CourseLayout = {
             ...layout,
             holes: updatedHoles,
             parTotal: Object.values(updatedHoles).reduce((sum, hole) => sum + (hole.par || 3), 0)
         };
-        
+
         const updatedLayouts = {
             ...course.layouts,
             [layoutId]: updatedLayout
         };
-        
+
         await updateDoc(doc(db, 'courses', courseId), {
             layouts: updatedLayouts
         });
@@ -257,14 +272,14 @@ export async function updateCourseLayoutPars(
     holePars: { [holeNumber: number]: number },
     courseData?: Course // Optional: pass course data directly to avoid lookup
 ): Promise<void> {
-    
+
     // Handle local courses (saved to localStorage)
     if (courseId.startsWith('local_')) {
         let localCourses = getLocalCourses();
-        
+
         // Use provided course data if available, otherwise look it up
         let course = courseData && courseData.id === courseId ? courseData : localCourses.find(c => c.id === courseId);
-        
+
         // If course not found, try to get it from raw localStorage
         if (!course && typeof window !== 'undefined') {
             try {
@@ -282,7 +297,7 @@ export async function updateCourseLayoutPars(
                 console.error('Error reading raw localStorage:', e);
             }
         }
-        
+
         // If still not found, create a minimal course entry from courseData if available
         if (!course && courseData) {
             course = courseData;
@@ -291,16 +306,16 @@ export async function updateCourseLayoutPars(
                 localCourses.push(course);
             }
         }
-        
+
         if (!course) {
             throw new Error(`Course not found in localStorage. Course ID: ${courseId}. Please try adding the course again.`);
         }
-        
+
         const layout = course.layouts?.[layoutId];
         if (!layout) {
             throw new Error('Layout not found');
         }
-        
+
         // Update all holes with new par values
         const updatedHoles: { [holeNumber: number]: any } = {};
         // Get max hole from either holePars or existing layout
@@ -315,41 +330,41 @@ export async function updateCourseLayoutPars(
                 par: newPar
             };
         }
-        
+
         // Calculate new par total
         const parTotal = Object.values(updatedHoles).reduce((sum, hole) => sum + (hole.par || 3), 0);
-        
+
         const updatedLayout: CourseLayout = {
             ...layout,
             holes: updatedHoles,
             parTotal
         };
-        
+
         const updatedLayouts = {
             ...course.layouts,
             [layoutId]: updatedLayout
         };
-        
+
         // Update the course in the array
         const updatedCourse = {
             ...course,
             layouts: updatedLayouts
         };
-        
+
         // Save back to localStorage
         const updatedCourses = localCourses.map(c => c.id === courseId ? updatedCourse : c);
         saveLocalCourses(updatedCourses);
         return;
     }
-    
+
     // Handle Firebase courses
     try {
         const course = await getCourse(courseId);
         if (!course) throw new Error('Course not found');
-        
+
         const layout = course.layouts?.[layoutId];
         if (!layout) throw new Error('Layout not found');
-        
+
         // Update all holes with new par values
         const updatedHoles: { [holeNumber: number]: any } = {};
         // Get max hole from either holePars or existing layout
@@ -364,21 +379,21 @@ export async function updateCourseLayoutPars(
                 par: newPar
             };
         }
-        
+
         // Calculate new par total
         const parTotal = Object.values(updatedHoles).reduce((sum, hole) => sum + (hole.par || 3), 0);
-        
+
         const updatedLayout: CourseLayout = {
             ...layout,
             holes: updatedHoles,
             parTotal
         };
-        
+
         const updatedLayouts = {
             ...course.layouts,
             [layoutId]: updatedLayout
         };
-        
+
         await updateDoc(doc(db, 'courses', courseId), {
             layouts: updatedLayouts
         });
@@ -401,7 +416,7 @@ export async function saveUserCustomLayout(
         // Always save to user's local course data first
         const course = await getCourse(courseId);
         if (!course) throw new Error('Course not found');
-        
+
         // Update the course with custom layout
         const updatedLayouts = {
             ...course.layouts,
@@ -410,11 +425,11 @@ export async function saveUserCustomLayout(
                 name: `${customLayout.name} (Custom)`
             }
         };
-        
+
         await updateDoc(doc(db, 'courses', courseId), {
             layouts: updatedLayouts
         });
-        
+
         // If submitting to database, save to custom layouts collection
         if (submitToDatabase) {
             await submitCustomLayout(courseId, customLayout);
@@ -435,7 +450,7 @@ export async function submitCustomLayout(
     try {
         const { auth } = await import('./firebase');
         const userId = auth.currentUser?.uid || 'anonymous';
-        
+
         const customLayoutData = {
             originalCourseId,
             layout: customLayout,
@@ -444,7 +459,7 @@ export async function submitCustomLayout(
             status: 'pending',
             reviewNotes: ''
         };
-        
+
         const docRef = doc(collection(db, 'userCustomLayouts'));
         await setDoc(docRef, customLayoutData);
         return docRef.id;

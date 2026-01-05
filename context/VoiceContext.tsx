@@ -17,6 +17,7 @@ interface VoiceContextType {
     startHotWordListening: () => void;
     stopHotWordListening: () => void;
     isSupported: boolean;
+    error: string | null;
 }
 
 const VoiceContext = createContext<VoiceContextType | null>(null);
@@ -30,6 +31,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const [recognition, setRecognition] = useState<any>(null);
     const [hotWordRecognition, setHotWordRecognition] = useState<any>(null);
     const [isSupported, setIsSupported] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const gameStateRef = useRef<any>(null);
     const retryCountRef = useRef<number>(0);
 
@@ -59,8 +61,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         const lowerText = text.toLowerCase().trim();
 
         // Check for queries first
-        if (lowerText.includes('?') || 
-            lowerText.includes("who's") || 
+        if (lowerText.includes('?') ||
+            lowerText.includes("who's") ||
             lowerText.includes("what's") ||
             lowerText.includes("what is") ||
             lowerText.includes("how") ||
@@ -71,7 +73,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         }
 
         // Round management
-        if (lowerText.includes('start round') || lowerText.includes('begin round')) {
+        if (lowerText.includes('start round') || lowerText.includes('begin round') || lowerText.includes('start around') || lowerText.includes('start a round') || lowerText.includes('play around')) {
             return { type: 'START_ROUND' };
         }
 
@@ -165,13 +167,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
         // Parse multiple scores: "I got a bogey, Joey got a birdie"
         const scorePatterns: any[] = [];
-        
+
         // Try to find all score patterns in the text
         for (const [term, value] of Object.entries(scoreTerms)) {
             // Pattern: "Player got a [term]" or "Player got [term]"
             const pattern1 = new RegExp(`([^,]+?)\\s+got\\s+a\\s+${term.replace(/\s+/g, '\\s+')}`, 'gi');
             const pattern2 = new RegExp(`([^,]+?)\\s+got\\s+${term.replace(/\s+/g, '\\s+')}`, 'gi');
-            
+
             let match;
             while ((match = pattern1.exec(lowerText)) !== null) {
                 scorePatterns.push({
@@ -209,9 +211,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             const pattern4 = new RegExp(`([^,]+?)\\s+made\\s+(?:a\\s+)?${term.replace(/\s+/g, '\\s+')}`, 'i');
             // Pattern: "Player [term]" (simplified)
             const pattern5 = new RegExp(`([^,]+?)\\s+${term.replace(/\s+/g, '\\s+')}`, 'i');
-            
+
             let match;
-            if ((match = lowerText.match(pattern1)) || 
+            if ((match = lowerText.match(pattern1)) ||
                 (match = lowerText.match(pattern2)) ||
                 (match = lowerText.match(pattern3)) ||
                 (match = lowerText.match(pattern4)) ||
@@ -232,13 +234,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         if (!players || players.length === 0) return null;
 
         // Exact match first
-        const exactMatch = players.find((p: any) => 
+        const exactMatch = players.find((p: any) =>
             p.name.toLowerCase() === name.toLowerCase()
         );
         if (exactMatch) return exactMatch;
 
         // Partial match
-        const partialMatch = players.find((p: any) => 
+        const partialMatch = players.find((p: any) =>
             p.name.toLowerCase().includes(name.toLowerCase()) ||
             name.toLowerCase().includes(p.name.toLowerCase())
         );
@@ -262,7 +264,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         if (typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
             setIsSupported(true);
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            
+
             // Hot word recognition (continuous, always listening when enabled)
             const hotWordInstance = new SpeechRecognition();
             hotWordInstance.continuous = true;
@@ -283,19 +285,19 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 }
 
                 const fullText = (finalTranscript + interimTranscript).toLowerCase();
-                
+
                 if (detectHotWord(fullText)) {
                     console.log('Hot word detected!');
                     stopSpeaking(); // Stop any ongoing TTS
-                    
+
                     // Extract command after hot word
                     const commandText = extractCommandAfterHotWord(finalTranscript || interimTranscript);
-                    
+
                     if (commandText) {
                         // Switch to active listening mode
                         setIsListeningForHotWord(false);
                         setIsListening(true);
-                        
+
                         // Process the command immediately
                         setTimeout(() => {
                             handleCommand(commandText);
@@ -334,21 +336,44 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognitionInstance = new SpeechRecognition();
             recognitionInstance.continuous = true;
-            recognitionInstance.interimResults = false;
+            recognitionInstance.interimResults = true; // Changed to true for better responsiveness
             recognitionInstance.lang = 'en-US';
 
             recognitionInstance.onresult = (event: any) => {
                 let currentTranscript = '';
+                let hasFinal = false;
+
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
                         currentTranscript += event.results[i][0].transcript;
+                        hasFinal = true;
+                    } else {
+                        // Just seeing interim results means the user is still talking
+                        if (typeof window !== 'undefined') {
+                            // Clear existing timer as user is speaking
+                            if ((window as any).__voiceSilenceTimer) clearTimeout((window as any).__voiceSilenceTimer);
+
+                            // Set a slightly tighter timer for interim pauses
+                            (window as any).__voiceSilenceTimer = setTimeout(() => {
+                                console.log('Auto-stopping due to silence (interim)');
+                                stopListening();
+                            }, 2000);
+                        }
                     }
                 }
-                if (currentTranscript) {
+
+                if (hasFinal && currentTranscript) {
                     const cleanTranscript = currentTranscript.trim();
                     setTranscript(cleanTranscript);
                     console.log('Voice Command:', cleanTranscript);
                     handleCommand(cleanTranscript);
+
+                    // Reset silence timer for new commands
+                    if ((window as any).__voiceSilenceTimer) clearTimeout((window as any).__voiceSilenceTimer);
+                    (window as any).__voiceSilenceTimer = setTimeout(() => {
+                        console.log('Auto-stopping due to silence (final)');
+                        stopListening();
+                    }, 2000);
                 }
             };
 
@@ -356,6 +381,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 console.error('Speech recognition error', event.error);
                 if (event.error === 'not-allowed') {
                     setIsListening(false);
+                    setError('Microphone access denied');
+                } else if (event.error === 'no-speech') {
+                    // Ignore no-speech errors (normal in continuous mode)
+                } else {
+                    setError(`Voice error: ${event.error}`);
                 }
             };
 
@@ -403,6 +433,25 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             setLastCommand(command);
         } else if (command.type !== 'UNKNOWN') {
             setLastCommand(command);
+        } else {
+            // Smart Suggestions for Unknown Commands
+            const lowerText = text.toLowerCase();
+            let suggestion = null;
+
+            if (lowerText.includes('score') || lowerText.match(/got a|made a|took a/)) {
+                suggestion = { type: 'SUGGESTION', text: "Try sayings: 'I got a 4' or 'Jamie got a birdie'" };
+            } else if (lowerText.includes('start') || lowerText.includes('play')) {
+                suggestion = { type: 'SUGGESTION', text: "Try: 'Start a round' or 'Start Skins'" };
+            } else if (lowerText.includes('hole')) {
+                suggestion = { type: 'SUGGESTION', text: "Try: 'Next hole' or 'Go to hole 5'" };
+            }
+
+            if (suggestion) {
+                setLastCommand(suggestion);
+                speak("I didn't quite get that. " + suggestion.text);
+            } else {
+                setLastCommand(command); // Pass original UNKNOWN to let UI decide
+            }
         }
     }, [parseCommand]);
 
@@ -445,7 +494,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             console.warn('Speech Recognition not supported in this browser');
             return;
         }
-        
+
         // If not ready, schedule retry (with max retries to prevent infinite loops)
         if (!hotWordRecognition) {
             if (retryCountRef.current < 5) { // Max 5 retries
@@ -460,10 +509,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             }
             return;
         }
-        
+
         // Reset retry count on successful initialization
         retryCountRef.current = 0;
-        
+
         // Safe execution with error handling
         if (!isListeningForHotWord) {
             try {
@@ -491,20 +540,28 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         }
     }, [hotWordRecognition, isListeningForHotWord, recognition, isListening]);
 
+    const contextValue = {
+        isListening,
+        isListeningForHotWord,
+        transcript,
+        lastCommand,
+        lastResponse,
+        startListening,
+        stopListening,
+        startHotWordListening,
+        stopHotWordListening,
+        isSupported,
+        error: error || null
+    };
+
+    console.log('VoiceProvider Value:', {
+        hasStartHotWord: !!contextValue.startHotWordListening,
+        isSupported: contextValue.isSupported
+    });
+
     return (
         <VoiceContext.Provider
-            value={{
-                isListening,
-                isListeningForHotWord,
-                transcript,
-                lastCommand,
-                lastResponse,
-                startListening,
-                stopListening,
-                startHotWordListening,
-                stopHotWordListening,
-                isSupported
-            }}
+            value={contextValue}
         >
             {children}
         </VoiceContext.Provider>
