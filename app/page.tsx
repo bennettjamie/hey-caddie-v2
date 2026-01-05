@@ -9,7 +9,9 @@ import PlayerSelector from '@/components/PlayerSelector';
 import PermissionsDashboard from '@/components/PermissionsDashboard';
 import ActiveRound from '@/components/ActiveRound';
 import InstallPrompt from '@/components/InstallPrompt';
-import { db } from '@/lib/firebase';
+import LandingPage from '@/components/LandingPage';
+import { db, auth, isFirebaseConfigured } from '@/lib/firebase';
+import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
 import { Player, getAllPlayers } from '@/lib/players';
 import { getAllCourses, findCoursesNearLocation, searchCourses } from '@/lib/courses';
 import { speak } from '@/lib/textToSpeech';
@@ -46,6 +48,37 @@ export default function Home() {
     const [voiceStep, setVoiceStep] = useState<'idle' | 'course' | 'players' | 'confirm'>('idle');
     const [voiceData, setVoiceData] = useState<{ course?: Course, players?: string[] }>({});
     const [showVoiceHelp, setShowVoiceHelp] = useState(false);
+
+    // Auth State
+    const [user, setUser] = useState<User | null>(null);
+    const [showLanding, setShowLanding] = useState(true);
+
+    useEffect(() => {
+        if (!auth) return;
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
+            setUser(u);
+            // If user is logged in, hide landing, OR if they manually proceeded
+            if (u) setShowLanding(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const handleGoogleLogin = async () => {
+        if (!auth) {
+            alert("Authentication is not available (Firebase config missing).");
+            return;
+        }
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithPopup(auth, provider);
+        } catch (error) {
+            console.error("Login failed", error);
+        }
+    };
+
+    const handleManualSetup = () => {
+        setShowLanding(false);
+    };
 
     // Reset state if listening stops manually and we are not transitioning
     useEffect(() => {
@@ -403,6 +436,16 @@ export default function Home() {
 
     if (currentRound) {
         return <ActiveRound />;
+    }
+
+    if (showLanding && !user) {
+        return (
+            <LandingPage
+                onLogin={handleGoogleLogin}
+                onManualSetup={handleManualSetup}
+                isConfigured={isFirebaseConfigured}
+            />
+        );
     }
 
     return (
