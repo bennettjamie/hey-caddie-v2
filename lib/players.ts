@@ -18,6 +18,8 @@ import {
     Timestamp
 } from 'firebase/firestore';
 import { queueOperation, isOnline } from './syncQueue';
+import { logger } from './logger';
+import { STORAGE_KEYS, QUERY_LIMITS } from './constants';
 
 export interface Player {
     id: string;
@@ -32,6 +34,12 @@ export interface Player {
         bestCourse?: string;
     };
     mrtzBalance?: number; // Current MRTZ balance
+
+    // Friend system fields
+    claimToken?: string; // Active claim token if unclaimed
+    isPublic?: boolean; // Searchable in player discovery
+    searchableName?: string; // Lowercase for case-insensitive search
+
     createdAt?: Timestamp | Date;
     updatedAt?: Timestamp | Date;
 }
@@ -67,9 +75,17 @@ export async function createPlayer(playerData: Omit<Player, 'id'>): Promise<stri
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now()
         });
+        logger.firebase('Player created successfully', {
+            playerId: docRef.id,
+            playerName: playerData.name,
+            operation: 'create-player'
+        });
         return docRef.id;
     } catch (error) {
-        console.error('Error creating player:', error);
+        logger.error('Error creating player', error, {
+            playerName: playerData.name,
+            operation: 'create-player'
+        });
         // Queue for retry if network error
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (errorMessage.includes('network') || errorMessage.includes('Failed to fetch') || errorMessage.includes('offline')) {
@@ -95,7 +111,10 @@ export async function getPlayer(playerId: string): Promise<Player | null> {
         }
         return null;
     } catch (error) {
-        console.error('Error getting player:', error);
+        logger.error('Error getting player', error, {
+            playerId,
+            operation: 'get-player'
+        });
         return null;
     }
 }
@@ -103,7 +122,7 @@ export async function getPlayer(playerId: string): Promise<Player | null> {
 /**
  * Get all players
  */
-export async function getAllPlayers(limitCount: number = 100): Promise<Player[]> {
+export async function getAllPlayers(limitCount: number = QUERY_LIMITS.ALL_PLAYERS_DEFAULT): Promise<Player[]> {
     try {
         const q = query(
             collection(db, PLAYERS_COLLECTION),
@@ -117,7 +136,10 @@ export async function getAllPlayers(limitCount: number = 100): Promise<Player[]>
             ...doc.data()
         })) as Player[];
     } catch (error) {
-        console.error('Error getting players:', error);
+        logger.error('Error getting players', error, {
+            limitCount,
+            operation: 'get-all-players'
+        });
         return [];
     }
 }
@@ -143,7 +165,7 @@ export async function searchPlayers(searchTerm: string): Promise<Player[]> {
             orderBy('name'),
             where('name', '>=', searchTerm),
             where('name', '<=', searchTerm + '\uf8ff'),
-            limit(20)
+            limit(QUERY_LIMITS.PLAYER_SEARCH_RESULTS)
         );
 
         const querySnapshot = await getDocs(q);
@@ -153,12 +175,12 @@ export async function searchPlayers(searchTerm: string): Promise<Player[]> {
         })) as Player[];
 
         // Fallback: If case-sensitive prefix query returns nothing, try fetching recent players
-        // This handles cases where user types "jo" but name is "John". 
+        // This handles cases where user types "jo" but name is "John".
         // (Firestore 'startAt' is case sensitive).
         if (results.length === 0 && searchTerm.length > 2) {
-            // Fallback to fetching a batch of players. 
+            // Fallback to fetching a batch of players.
             // Ideally we should have a 'searchName' lowercase field.
-            const allQ = query(collection(db, PLAYERS_COLLECTION), limit(100));
+            const allQ = query(collection(db, PLAYERS_COLLECTION), limit(QUERY_LIMITS.PLAYER_SEARCH_FALLBACK));
             const allSnap = await getDocs(allQ);
             return allSnap.docs
                 .map(doc => ({ id: doc.id, ...doc.data() } as Player))
@@ -167,7 +189,10 @@ export async function searchPlayers(searchTerm: string): Promise<Player[]> {
 
         return results;
     } catch (error) {
-        console.error('Error searching players:', error);
+        logger.error('Error searching players', error, {
+            searchTerm,
+            operation: 'search-players'
+        });
         return [];
     }
 }
@@ -189,7 +214,10 @@ export async function getPlayersByUserId(userId: string): Promise<Player[]> {
             ...doc.data()
         })) as Player[];
     } catch (error) {
-        console.error('Error getting players by user ID:', error);
+        logger.error('Error getting players by user ID', error, {
+            userId,
+            operation: 'get-players-by-user-id'
+        });
         return [];
     }
 }
@@ -204,8 +232,17 @@ export async function updatePlayer(playerId: string, updates: Partial<Player>): 
             ...updates,
             updatedAt: Timestamp.now()
         });
+        logger.firebase('Player updated successfully', {
+            playerId,
+            updateFields: Object.keys(updates),
+            operation: 'update-player'
+        });
     } catch (error) {
-        console.error('Error updating player:', error);
+        logger.error('Error updating player', error, {
+            playerId,
+            updateFields: Object.keys(updates),
+            operation: 'update-player'
+        });
         throw error;
     }
 }
@@ -217,8 +254,15 @@ export async function deletePlayer(playerId: string): Promise<void> {
     try {
         const docRef = doc(db, PLAYERS_COLLECTION, playerId);
         await deleteDoc(docRef);
+        logger.firebase('Player deleted successfully', {
+            playerId,
+            operation: 'delete-player'
+        });
     } catch (error) {
-        console.error('Error deleting player:', error);
+        logger.error('Error deleting player', error, {
+            playerId,
+            operation: 'delete-player'
+        });
         throw error;
     }
 }
@@ -247,8 +291,18 @@ export async function updatePlayerStats(playerId: string, roundScore: number): P
         };
 
         await updatePlayer(playerId, updates);
+        logger.firebase('Player stats updated', {
+            playerId,
+            roundScore,
+            newRoundsPlayed,
+            operation: 'update-player-stats'
+        });
     } catch (error) {
-        console.error('Error updating player stats:', error);
+        logger.error('Error updating player stats', error, {
+            playerId,
+            roundScore,
+            operation: 'update-player-stats'
+        });
     }
 }
 
@@ -258,7 +312,7 @@ export async function updatePlayerStats(playerId: string, roundScore: number): P
 export function getLocalPlayers(): Player[] {
     if (typeof window === 'undefined') return [];
     try {
-        const stored = localStorage.getItem('players');
+        const stored = localStorage.getItem(STORAGE_KEYS.PLAYERS);
         return stored ? JSON.parse(stored) : [];
     } catch {
         return [];
@@ -278,22 +332,28 @@ export function saveLocalPlayer(player: Player): void {
         } else {
             players.push(player);
         }
-        localStorage.setItem('players', JSON.stringify(players));
+        localStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify(players));
     } catch (error) {
-        console.error('Error saving player locally:', error);
+        logger.error('Error saving player locally', error, {
+            playerId: player.id,
+            playerName: player.name,
+            operation: 'save-local-player'
+        });
     }
 }
 
 /**
  * Get or create player by name (useful for quick player creation)
  */
-export async function getOrCreatePlayerByName(name: string, userId?: string): Promise<Player> {
+export async function getOrCreatePlayerByName(name: string, userId?: string, email?: string): Promise<Player> {
     try {
         // Search for existing player
         const existing = await searchPlayers(name);
         const exactMatch = existing.find(p => p.name.toLowerCase() === name.toLowerCase());
 
         if (exactMatch) {
+            // Update email if provided and missing? Or just return?
+            // For now, let's just return. If we want to capture email for existing players, we might need a separate update flow.
             return exactMatch;
         }
 
@@ -301,10 +361,17 @@ export async function getOrCreatePlayerByName(name: string, userId?: string): Pr
         const playerId = await createPlayer({
             name,
             userId,
+            email, // Add email
             stats: {
                 roundsPlayed: 0,
                 averageScore: 0
             }
+        });
+
+        logger.info('Player created via getOrCreate', {
+            playerId,
+            playerName: name,
+            operation: 'get-or-create-player'
         });
 
         return await getPlayer(playerId) || {
@@ -317,7 +384,10 @@ export async function getOrCreatePlayerByName(name: string, userId?: string): Pr
             }
         };
     } catch (error) {
-        console.error('Error getting or creating player:', error);
+        logger.error('Error getting or creating player', error, {
+            playerName: name,
+            operation: 'get-or-create-player'
+        });
         // Return a local player as fallback
         return {
             id: `local_${Date.now()}`,
@@ -334,15 +404,113 @@ export async function getOrCreatePlayerByName(name: string, userId?: string): Pr
 /**
  * Get frequently played players (friends) - players you've played with most
  */
-export async function getFrequentlyPlayedPlayers(limitCount: number = 20): Promise<Player[]> {
+export async function getFrequentlyPlayedPlayers(limitCount: number = QUERY_LIMITS.FREQUENTLY_PLAYED_PLAYERS): Promise<Player[]> {
     try {
         // For now, return all players sorted by name
         // In the future, this could be sorted by frequency of play
         const players = await getAllPlayers(limitCount);
         return players.sort((a, b) => a.name.localeCompare(b.name));
     } catch (error) {
-        console.error('Error getting frequently played players:', error);
+        logger.error('Error getting frequently played players', error, {
+            limitCount,
+            operation: 'get-frequently-played-players'
+        });
         return [];
+    }
+}
+
+/**
+ * Link a player to a user account (for claiming stats)
+ */
+export async function linkPlayerToUser(playerId: string, userId: string): Promise<void> {
+    try {
+        const docRef = doc(db, PLAYERS_COLLECTION, playerId);
+        await updateDoc(docRef, {
+            userId,
+            updatedAt: Timestamp.now()
+        });
+
+        logger.firebase('Player linked to user', {
+            playerId,
+            userId,
+            operation: 'link-player-to-user'
+        });
+    } catch (error) {
+        logger.error('Error linking player to user', error, {
+            playerId,
+            userId,
+            operation: 'link-player-to-user'
+        });
+        throw error;
+    }
+}
+
+/**
+ * Merge multiple players into one target player
+ * Used when a user claims multiple anonymous player accounts
+ */
+export async function mergePlayers(targetPlayerId: string, sourcePlayerIds: string[]): Promise<void> {
+    try {
+        const targetPlayer = await getPlayer(targetPlayerId);
+        if (!targetPlayer) {
+            throw new Error(`Target player ${targetPlayerId} not found`);
+        }
+
+        // Aggregate stats from all source players
+        let totalRounds = targetPlayer.stats?.roundsPlayed || 0;
+        let totalScore = (targetPlayer.stats?.averageScore || 0) * totalRounds;
+        let bestRound = targetPlayer.stats?.bestRound;
+        let bestCourse = targetPlayer.stats?.bestCourse;
+
+        for (const sourceId of sourcePlayerIds) {
+            const sourcePlayer = await getPlayer(sourceId);
+            if (sourcePlayer && sourcePlayer.stats) {
+                const sourceRounds = sourcePlayer.stats.roundsPlayed || 0;
+                totalRounds += sourceRounds;
+                totalScore += (sourcePlayer.stats.averageScore || 0) * sourceRounds;
+
+                if (sourcePlayer.stats.bestRound !== undefined) {
+                    if (bestRound === undefined || sourcePlayer.stats.bestRound < bestRound) {
+                        bestRound = sourcePlayer.stats.bestRound;
+                        bestCourse = sourcePlayer.stats.bestCourse;
+                    }
+                }
+            }
+        }
+
+        const newAverageScore = totalRounds > 0 ? totalScore / totalRounds : 0;
+
+        // Update target player with merged stats
+        await updatePlayer(targetPlayerId, {
+            stats: {
+                roundsPlayed: totalRounds,
+                averageScore: Math.round(newAverageScore * 100) / 100,
+                bestRound,
+                bestCourse
+            }
+        });
+
+        // Delete source players (optional - might want to keep for history)
+        // For now, just unlink them instead of deleting
+        for (const sourceId of sourcePlayerIds) {
+            await updatePlayer(sourceId, {
+                userId: undefined // Unlink from user
+            });
+        }
+
+        logger.firebase('Players merged successfully', {
+            targetPlayerId,
+            sourcePlayerIds,
+            mergedRounds: totalRounds,
+            operation: 'merge-players'
+        });
+    } catch (error) {
+        logger.error('Error merging players', error, {
+            targetPlayerId,
+            sourcePlayerIds,
+            operation: 'merge-players'
+        });
+        throw error;
     }
 }
 

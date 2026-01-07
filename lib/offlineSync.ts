@@ -7,6 +7,8 @@ import { getSyncQueue, removeOperation, isOnline, SyncOperation } from './syncQu
 import { saveRound } from './rounds';
 import { createPlayer, updatePlayer } from './players';
 import { updateRound } from './rounds';
+import { logger } from './logger';
+import { STORAGE_KEYS, SYNC_CONFIG } from './constants';
 
 type SyncStatusCallback = (status: {
     isSyncing: boolean;
@@ -70,11 +72,18 @@ async function executeOperation(operation: SyncOperation): Promise<boolean> {
                 }
                 return false;
             default:
-                console.warn('Unknown operation type:', operation.type);
+                logger.warn('Unknown operation type', {
+                    operationType: operation.type,
+                    operation: 'execute-sync-operation'
+                });
                 return false;
         }
     } catch (error) {
-        console.error(`Error executing ${operation.type}:`, error);
+        logger.error(`Error executing ${operation.type}`, error, {
+            operationType: operation.type,
+            operationId: operation.id,
+            operation: 'execute-sync-operation'
+        });
         // Check if it's a network error
         const isNetworkError = error instanceof Error && (
             error.message.includes('network') ||
@@ -121,13 +130,19 @@ export async function processSyncQueue(): Promise<{
             const opIndex = updatedQueue.findIndex(op => op.id === operation.id);
             if (opIndex !== -1) {
                 updatedQueue[opIndex].retries++;
-                if (updatedQueue[opIndex].retries >= 3) {
+                if (updatedQueue[opIndex].retries >= SYNC_CONFIG.MAX_RETRIES) {
                     // Max retries reached, remove it
                     removeOperation(operation.id);
                     failed++;
+                    logger.error('Sync operation failed after max retries', null, {
+                        operationType: operation.type,
+                        operationId: operation.id,
+                        retries: updatedQueue[opIndex].retries,
+                        operation: 'process-sync-queue'
+                    });
                 } else {
                     // Save updated retry count
-                    localStorage.setItem('syncQueue', JSON.stringify(updatedQueue));
+                    localStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(updatedQueue));
                 }
             }
         }
@@ -135,12 +150,21 @@ export async function processSyncQueue(): Promise<{
         notifySyncStatus(queue.length - synced - failed, synced, failed);
 
         // Small delay between operations
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, SYNC_CONFIG.OPERATION_DELAY_MS));
     }
 
     isSyncing = false;
     const remaining = getSyncQueue().length;
     notifySyncStatus(remaining, synced, failed);
+
+    if (synced > 0 || failed > 0) {
+        logger.sync('Sync queue processed', {
+            synced,
+            failed,
+            remaining,
+            operation: 'process-sync-queue'
+        });
+    }
 
     return { synced, failed };
 }
@@ -153,16 +177,19 @@ export function initializeAutoSync(): void {
 
     // Process queue immediately if online
     if (isOnline()) {
-        setTimeout(() => processSyncQueue(), 1000);
+        setTimeout(() => processSyncQueue(), SYNC_CONFIG.QUEUE_RETRY_DELAY_MS);
     }
 
     // Listen for online event
     window.addEventListener('online', () => {
-        console.log('Connection restored, syncing queued operations...');
-        setTimeout(() => processSyncQueue(), 500);
+        logger.sync('Connection restored, syncing queued operations', {
+            queueLength: getSyncQueue().length,
+            operation: 'auto-sync'
+        });
+        setTimeout(() => processSyncQueue(), SYNC_CONFIG.RETRY_DELAY_MS);
     });
 
-    // Periodic sync check (every 30 seconds)
+    // Periodic sync check
     setInterval(() => {
         if (isOnline() && !isSyncing) {
             const queue = getSyncQueue();
@@ -170,6 +197,6 @@ export function initializeAutoSync(): void {
                 processSyncQueue();
             }
         }
-    }, 30000);
+    }, SYNC_CONFIG.PERIODIC_SYNC_INTERVAL_MS);
 }
 

@@ -8,6 +8,8 @@ import { doc, getDoc, updateDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { Round } from '@/types/firestore';
 import { calculateSkins, calculateNassau, calculateFundatory, FundatoryBet } from './betting';
 import { getPlayerBalance, createRoundLedgerEntries } from './mrtzLedger';
+import { logger } from './logger';
+import { STORAGE_KEYS } from './constants';
 
 const MRTZ_COLLECTION = 'mrtz'; // Legacy collection, kept for backward compatibility
 
@@ -27,7 +29,10 @@ export async function getPlayerMRTZ(playerId: string): Promise<number> {
         // Fallback to local storage
         return getLocalMRTZ(playerId);
     } catch (error) {
-        console.error('Error getting player MRTZ:', error);
+        logger.error('Error getting player MRTZ', error, {
+            playerId,
+            operation: 'get-player-mrtz'
+        });
         return getLocalMRTZ(playerId);
     }
 }
@@ -60,13 +65,22 @@ export async function updatePlayerMRTZ(playerId: string, amount: number): Promis
                 });
             }
         } catch (error) {
-            console.error('Error updating MRTZ in Firebase:', error);
+            logger.error('Error updating MRTZ in Firebase', error, {
+                playerId,
+                amount,
+                newBalance,
+                operation: 'update-player-mrtz-firebase'
+            });
         }
-        
+
         // Also update local storage
         saveLocalMRTZ(playerId, newBalance);
     } catch (error) {
-        console.error('Error updating player MRTZ:', error);
+        logger.error('Error updating player MRTZ', error, {
+            playerId,
+            amount,
+            operation: 'update-player-mrtz'
+        });
         const currentBalance = getLocalMRTZ(playerId);
         saveLocalMRTZ(playerId, currentBalance + amount);
     }
@@ -160,7 +174,7 @@ export function calculateRoundMRTZ(
 export function getLocalMRTZ(playerId: string): number {
     if (typeof window === 'undefined') return 0;
     try {
-        const stored = localStorage.getItem('mrtzBalances');
+        const stored = localStorage.getItem(STORAGE_KEYS.MRTZ_BALANCES);
         if (stored) {
             const balances = JSON.parse(stored);
             return balances[playerId] || 0;
@@ -177,12 +191,16 @@ export function getLocalMRTZ(playerId: string): number {
 export function saveLocalMRTZ(playerId: string, balance: number): void {
     if (typeof window === 'undefined') return;
     try {
-        const stored = localStorage.getItem('mrtzBalances');
+        const stored = localStorage.getItem(STORAGE_KEYS.MRTZ_BALANCES);
         const balances = stored ? JSON.parse(stored) : {};
         balances[playerId] = balance;
-        localStorage.setItem('mrtzBalances', JSON.stringify(balances));
+        localStorage.setItem(STORAGE_KEYS.MRTZ_BALANCES, JSON.stringify(balances));
     } catch (error) {
-        console.error('Error saving MRTZ locally:', error);
+        logger.error('Error saving MRTZ locally', error, {
+            playerId,
+            balance,
+            operation: 'save-local-mrtz'
+        });
     }
 }
 

@@ -22,6 +22,7 @@ export interface GameRound {
     teeOrder: string[]; // Array of player IDs
     currentTeeIndex: number;
     fundatoryBets?: FundatoryBet[];
+    id?: string;
     activeBets?: {
         skins?: { value: number; started: boolean; participants?: string[] };
         nassau?: { value: number; started: boolean; participants?: string[] };

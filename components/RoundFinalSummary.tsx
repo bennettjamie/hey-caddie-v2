@@ -1,16 +1,70 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useGame } from '@/context/GameContext';
 import { calculateSkins, calculateNassau, calculateFundatory } from '@/lib/betting';
 import { calculateRoundMRTZ } from '@/lib/mrtz';
+import { AchievementType } from '@/lib/stats';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import StatsClaimModal from './StatsClaimModal';
+
+// Helper for highlights
+function HighlightsSection({ stats, players }: { stats: any[], players: any[] }) {
+    if (!stats || stats.length === 0) return null;
+
+    return (
+        <div style={{ marginBottom: '1.5rem' }}>
+            <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '0.5rem', color: '#fbbf24' }}>
+                Highlights ✨
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {stats.map((stat, idx) => {
+                    const player = players.find((p: any) => p.id === stat.playerId);
+                    if (!player) return null;
+
+                    return (
+                        <div key={idx} style={{
+                            padding: '0.75rem',
+                            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(251, 191, 36, 0.2)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem'
+                        }}>
+                            <span style={{ fontSize: '1.5rem' }}>
+                                {stat.type === 'PERSONAL_BEST' ? '🏆' : '🔥'}
+                            </span>
+                            <div>
+                                <div style={{ fontWeight: 'bold', color: '#F8FAFC' }}>
+                                    {player.name}
+                                </div>
+                                <div style={{ color: '#fbbf24', fontSize: '0.9rem' }}>
+                                    {stat.details}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
 
 interface RoundFinalSummaryProps {
     onClose: () => void;
     finalRoundData?: any; // Optional final round data if round was already ended
+    roundId?: string; // Round ID for stats claims
 }
 
-export default function RoundFinalSummary({ onClose, finalRoundData }: RoundFinalSummaryProps) {
-    const { currentRound: contextRound, activeBets: contextBets = {}, fundatoryBets: contextFundatoryBets, players: contextPlayers } = useGame();
+export default function RoundFinalSummary({ onClose, finalRoundData, roundId }: RoundFinalSummaryProps) {
+    const { currentRound: contextRound, activeBets: contextBets = {}, fundatoryBets: contextFundatoryBets, players: contextPlayers, roundAchievements: contextRoundAchievements } = useGame();
+
+    // State for auth and claim modal
+    const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+    const [showClaimModal, setShowClaimModal] = useState(false);
+    const [hasShownAutoModal, setHasShownAutoModal] = useState(false);
 
     // Use finalRoundData if provided (round already ended), otherwise use context
     const currentRound = finalRoundData || contextRound;
@@ -22,6 +76,30 @@ export default function RoundFinalSummary({ onClose, finalRoundData }: RoundFina
     const players = finalRoundData?.players || contextPlayers;
 
     if (!currentRound) return null;
+
+    // Auth state listener
+    useEffect(() => {
+        if (!auth) return;
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setCurrentUser(user);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    // Find unregistered players (those without userId)
+    const unregisteredPlayers = currentRound.players.filter((p: any) => !p.userId);
+
+    // Auto-show claim modal if there are unregistered players and user is authenticated
+    useEffect(() => {
+        if (currentUser && unregisteredPlayers.length > 0 && !hasShownAutoModal && roundId) {
+            // Small delay to let the summary render first
+            const timer = setTimeout(() => {
+                setShowClaimModal(true);
+                setHasShownAutoModal(true);
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [currentUser, unregisteredPlayers.length, hasShownAutoModal, roundId]);
 
     const holes = Array.from({ length: 18 }, (_, i) => i + 1);
     const playerIds = currentRound.players.map((p: any) => p.id);
@@ -177,57 +255,117 @@ export default function RoundFinalSummary({ onClose, finalRoundData }: RoundFina
                     </div>
                 </div>
 
-                {/* Final Leaderboard */}
+                {/* Final Leaderboard & Scorecards */}
                 <div style={{ marginBottom: '1.5rem' }}>
-                    <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '0.5rem' }}>Final Leaderboard</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        {leaderboard.map((entry: any, index: number) => (
-                            <div
-                                key={entry.player.id}
-                                style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    padding: '1rem',
-                                    backgroundColor: index === 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                    borderRadius: '12px',
-                                    border: index === 0 ? '1px solid var(--success)' : '1px solid #334155'
-                                }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                    <span style={{
-                                        fontSize: '1.25rem',
-                                        fontWeight: 'bold',
-                                        color: index === 0 ? 'var(--success)' : '#94A3B8',
-                                        minWidth: '30px'
-                                    }}>
-                                        {index + 1}
-                                    </span>
-                                    <span style={{ fontWeight: 600, fontSize: '1.1rem' }}>
-                                        {entry.player.name}
-                                    </span>
-                                </div>
-                                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                                    <span style={{
-                                        fontSize: '1.25rem',
-                                        fontWeight: 'bold',
-                                        color: getScoreColor(entry.score)
-                                    }}>
-                                        {getScoreDisplay(entry.score)}
-                                    </span>
-                                    {entry.mrtz !== 0 && (
-                                        <span style={{
-                                            fontSize: '0.875rem',
-                                            color: entry.mrtz > 0 ? 'var(--success)' : 'var(--danger)',
-                                            fontWeight: 600,
-                                            backgroundColor: 'rgba(0,0,0,0.3)',
-                                            padding: '4px 8px',
-                                            borderRadius: '4px'
-                                        }}>
-                                            {entry.mrtz > 0 ? '+' : ''}{entry.mrtz.toFixed(2)}
-                                        </span>
-                                    )}
-                                </div>
+                    <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '0.5rem' }}>Scorecard</h3>
+
+                    {/* Helper function for rendering 9-hole table */}
+                    {[0, 1].map(half => {
+                        const startHole = half * 9 + 1;
+                        const endHole = startHole + 8;
+                        const holeRange = Array.from({ length: 9 }, (_, i) => startHole + i);
+                        const label = half === 0 ? "Front 9" : "Back 9";
+                        const subtotalLabel = half === 0 ? "Out" : "In";
+
+                        // Calculate Par Total for this 9
+                        const parTotal = holeRange.reduce((sum, h) => sum + (currentRound.course?.layouts?.[currentRound.course.selectedLayoutKey || 'default']?.holes?.[h]?.par || 3), 0);
+
+                        return (
+                            <div key={label} style={{ marginBottom: '1.5rem', overflowX: 'auto' }}>
+                                <h4 style={{ fontSize: '0.875rem', color: '#94A3B8', marginBottom: '0.5rem' }}>{label}</h4>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textAlign: 'center' }}>
+                                    <thead>
+                                        <tr style={{ color: '#94A3B8' }}>
+                                            <th style={{ textAlign: 'left', padding: '0.25rem', minWidth: '80px' }}>Hole</th>
+                                            {holeRange.map(h => <th key={h} style={{ padding: '0.25rem' }}>{h}</th>)}
+                                            <th style={{ padding: '0.25rem', fontWeight: 'bold', color: '#F8FAFC' }}>{subtotalLabel}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {/* Distance Row */}
+                                        <tr style={{ color: '#64748B' }}>
+                                            <td style={{ textAlign: 'left', padding: '0.25rem' }}>Dist</td>
+                                            {holeRange.map(h => (
+                                                <td key={h} style={{ padding: '0.25rem' }}>
+                                                    {currentRound.course?.layouts?.[currentRound.course.selectedLayoutKey || 'default']?.holes?.[h]?.distance || '-'}
+                                                </td>
+                                            ))}
+                                            <td></td>
+                                        </tr>
+                                        {/* Par Row */}
+                                        <tr style={{ color: '#F8FAFC', fontWeight: 'bold' }}>
+                                            <td style={{ textAlign: 'left', padding: '0.25rem' }}>Par</td>
+                                            {holeRange.map(h => (
+                                                <td key={h} style={{ padding: '0.25rem' }}>
+                                                    {currentRound.course?.layouts?.[currentRound.course.selectedLayoutKey || 'default']?.holes?.[h]?.par || 3}
+                                                </td>
+                                            ))}
+                                            <td style={{ color: 'var(--info)' }}>{parTotal}</td>
+                                        </tr>
+                                        {/* Player Rows */}
+                                        {currentRound.players.map((player: any) => {
+                                            const playerScores = holeRange.map(h => currentRound.scores[h]?.[player.id]);
+                                            const subtotal = playerScores.reduce((sum: number, s: number) => sum + (typeof s === 'number' ? s : 0), 0); // Relative to par sum
+                                            // To show gross score, we'd need to add par. But app stores relative.
+                                            // Let's show relative total for now as that's consistent with "E", "+1" etc.
+                                            // ACTUALLY, usually scorecards show GROSS scores (3, 4, 5).
+                                            // Stored scores are relative (0, 1, -1). We need to convert to Gross for display? 
+                                            // User screenshot shows "3 3 2 3...". Apps usually show gross.
+                                            // Let's assume we display GROSS scores in table.
+
+                                            // Convert relative to gross for display
+                                            const grossScores = holeRange.map(h => {
+                                                const rel = currentRound.scores[h]?.[player.id];
+                                                if (rel === undefined || rel === null) return null;
+                                                const par = currentRound.course?.layouts?.[currentRound.course.selectedLayoutKey || 'default']?.holes?.[h]?.par || 3;
+                                                return par + rel;
+                                            });
+                                            const grossTotal = grossScores.reduce((sum: number, s: number | null) => sum + (s || 0), 0);
+
+                                            return (
+                                                <tr key={player.id} style={{ borderTop: '1px solid #334155' }}>
+                                                    <td style={{ textAlign: 'left', padding: '0.5rem 0.25rem', fontWeight: 600, color: '#F8FAFC' }}>
+                                                        {player.name}
+                                                    </td>
+                                                    {grossScores.map((score, i) => {
+                                                        const h = holeRange[i];
+                                                        const par = currentRound.course?.layouts?.[currentRound.course.selectedLayoutKey || 'default']?.holes?.[h]?.par || 3;
+                                                        const rel = score !== null ? score - par : 0;
+
+                                                        // Circle for birdie/eagle, Box for bogey
+                                                        let style = {};
+                                                        if (rel < 0) style = { color: '#fff', backgroundColor: 'var(--success)', borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+                                                        else if (rel > 0) style = { backgroundColor: 'var(--danger)', color: '#fff', borderRadius: '4px', padding: '0 4px' };
+                                                        else style = { color: '#94A3B8' };
+
+                                                        return (
+                                                            <td key={h} style={{ padding: '0.25rem' }}>
+                                                                {score !== null ? (
+                                                                    <span style={style}>{score}</span>
+                                                                ) : '-'}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    <td style={{ fontWeight: 'bold', color: '#F8FAFC' }}>
+                                                        {grossTotal > 0 ? grossTotal : '-'}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        );
+                    })}
+
+                    {/* Total Summary */}
+                    <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                        {leaderboard.map((entry: any) => (
+                            <div key={entry.player.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <span style={{ fontWeight: 600 }}>{entry.player.name}</span>
+                                <span style={{ fontWeight: 'bold', color: getScoreColor(entry.score) }}>
+                                    {getScoreDisplay(entry.score)} <span style={{ fontSize: '0.8em', color: '#64748B' }}>Total</span>
+                                </span>
                             </div>
                         ))}
                     </div>
@@ -291,6 +429,11 @@ export default function RoundFinalSummary({ onClose, finalRoundData }: RoundFina
                     </div>
                 )}
 
+                {/* HIGHLIGHTS SUMMARY */}
+                {/* We need to get achievements from context since they aren't in finalRoundData yet */}
+                {/* Note: In a real app we'd save these to the round object in Firestore, but for now we read from context state */}
+                <HighlightsSection stats={contextRoundAchievements || []} players={players} />
+
                 {/* SETTLEMENT BREAKDOWN - "Who Owes Who" */}
                 {settlements.length > 0 && (
                     <div style={{ marginBottom: '1.5rem' }}>
@@ -331,65 +474,94 @@ export default function RoundFinalSummary({ onClose, finalRoundData }: RoundFina
                     </div>
                 )}
 
-                {/* Action Button */}
                 {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '1rem', marginTop: 'auto' }}>
-                    <button
-                        className="btn"
-                        onClick={async () => {
-                            // Generate share text
-                            const winner = leaderboard[0];
-                            const shareText = `🏌️‍♂️ Round Complete at ${currentRound.course?.name || 'Unknown Course'}!\n\n` +
-                                `🏆 Winner: ${winner.player.name} (${getScoreDisplay(winner.score)})\n\n` +
-                                `Leaderboard:\n` +
-                                leaderboard.map((l: any, i: number) =>
-                                    `${i + 1}. ${l.player.name}: ${getScoreDisplay(l.score)}${l.mrtz !== 0 ? ` (${l.mrtz > 0 ? '+' : ''}${l.mrtz.toFixed(2)} MRTZ)` : ''}`
-                                ).join('\n') +
-                                `\n\nPlayed with Hey Caddie ⛳`;
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: 'auto' }}>
+                    {/* Invite Players Button (shown if there are unregistered players) */}
+                    {currentUser && unregisteredPlayers.length > 0 && roundId && (
+                        <button
+                            className="btn"
+                            onClick={() => setShowClaimModal(true)}
+                            style={{
+                                width: '100%',
+                                backgroundColor: 'var(--accent)',
+                                padding: '1rem',
+                                fontSize: '1rem',
+                                fontWeight: 600
+                            }}
+                        >
+                            📨 Invite Players ({unregisteredPlayers.length})
+                        </button>
+                    )}
 
-                            if (navigator.share) {
-                                try {
-                                    await navigator.share({
-                                        title: 'Round Results',
-                                        text: shareText
-                                    });
-                                } catch (err) {
-                                    console.error('Error sharing:', err);
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        <button
+                            className="btn"
+                            onClick={async () => {
+                                // Generate share text
+                                const winner = leaderboard[0];
+                                const shareText = `🏌️‍♂️ Round Complete at ${currentRound.course?.name || 'Unknown Course'}!\n\n` +
+                                    `🏆 Winner: ${winner.player.name} (${getScoreDisplay(winner.score)})\n\n` +
+                                    `Leaderboard:\n` +
+                                    leaderboard.map((l: any, i: number) =>
+                                        `${i + 1}. ${l.player.name}: ${getScoreDisplay(l.score)}${l.mrtz !== 0 ? ` (${l.mrtz > 0 ? '+' : ''}${l.mrtz.toFixed(2)} MRTZ)` : ''}`
+                                    ).join('\n') +
+                                    `\n\nPlayed with Hey Caddie ⛳`;
+
+                                if (navigator.share) {
+                                    try {
+                                        await navigator.share({
+                                            title: 'Round Results',
+                                            text: shareText
+                                        });
+                                    } catch (err) {
+                                        console.error('Error sharing:', err);
+                                    }
+                                } else {
+                                    // Fallback to clipboard
+                                    try {
+                                        await navigator.clipboard.writeText(shareText);
+                                        alert('Results copied to clipboard!');
+                                    } catch (err) {
+                                        console.error('Error copying:', err);
+                                    }
                                 }
-                            } else {
-                                // Fallback to clipboard
-                                try {
-                                    await navigator.clipboard.writeText(shareText);
-                                    alert('Results copied to clipboard!');
-                                } catch (err) {
-                                    console.error('Error copying:', err);
-                                }
-                            }
-                        }}
-                        style={{
-                            flex: 1,
-                            backgroundColor: 'var(--info)',
-                            padding: '1rem',
-                            fontSize: '1rem',
-                            fontWeight: 600
-                        }}
-                    >
-                        📤 Share Results
-                    </button>
-                    <button
-                        className="btn"
-                        onClick={onClose}
-                        style={{
-                            flex: 1,
-                            backgroundColor: 'var(--success)',
-                            padding: '1rem',
-                            fontSize: '1.125rem',
-                            fontWeight: 600
-                        }}
-                    >
-                        Done
-                    </button>
+                            }}
+                            style={{
+                                flex: 1,
+                                backgroundColor: 'var(--info)',
+                                padding: '1rem',
+                                fontSize: '1rem',
+                                fontWeight: 600
+                            }}
+                        >
+                            📤 Share Results
+                        </button>
+                        <button
+                            className="btn"
+                            onClick={onClose}
+                            style={{
+                                flex: 1,
+                                backgroundColor: 'var(--success)',
+                                padding: '1rem',
+                                fontSize: '1.125rem',
+                                fontWeight: 600
+                            }}
+                        >
+                            Done
+                        </button>
+                    </div>
                 </div>
+
+                {/* Stats Claim Modal */}
+                {showClaimModal && currentUser && roundId && unregisteredPlayers.length > 0 && (
+                    <StatsClaimModal
+                        roundId={roundId}
+                        unregisteredPlayers={unregisteredPlayers}
+                        currentUserId={currentUser.uid}
+                        currentUserName={currentUser.displayName || 'Unknown'}
+                        onClose={() => setShowClaimModal(false)}
+                    />
+                )}
             </div>
         </div>
     );

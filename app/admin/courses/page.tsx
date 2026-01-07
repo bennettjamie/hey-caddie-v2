@@ -26,7 +26,7 @@ export default function AdminCourses() {
             <h1>Course Management</h1>
 
             <div style={{ marginTop: '2rem' }}>
-                <CourseImporter />
+                <CourseImporter onClose={() => {}} />
             </div>
 
             <div className="card" style={{ marginTop: '2rem' }}>

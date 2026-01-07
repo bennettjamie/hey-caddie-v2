@@ -10,6 +10,9 @@
     "lint": "next lint",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest watch",
+    "test:ui": "vitest --ui",
     "setup-indexes": "node scripts/setup-firestore-indexes.js",
     "deploy:indexes": "firebase deploy --only firestore:indexes"
   },
@@ -23,6 +26,7 @@
   "dependencies": {
     "firebase": "^12.6.0",
     "fuse.js": "^7.1.0",
+    "nanoid": "^5.1.6",
     "next": "^16.1.1",
     "next-pwa": "^5.6.0",
     "react": "^19.2.0",
@@ -34,6 +38,8 @@
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
+    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/ui": "^4.0.16",
     "jsdom": "^27.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"

@@ -7,7 +7,13 @@ interface CourseAmendmentModalProps {
     course: Course;
     layoutId: string;
     onClose: () => void;
-    onSave: (holePars: { [holeNumber: number]: number }, submitToDatabase: boolean) => Promise<void>;
+    onSave: (
+        amendments: {
+            pars: { [holeNumber: number]: number },
+            distances: { [holeNumber: number]: number }
+        },
+        submitToDatabase: boolean
+    ) => Promise<void>;
 }
 
 export default function CourseAmendmentModal({
@@ -17,28 +23,33 @@ export default function CourseAmendmentModal({
     onSave
 }: CourseAmendmentModalProps) {
     const [holePars, setHolePars] = useState<{ [holeNumber: number]: number }>({});
+    const [holeDistances, setHoleDistances] = useState<{ [holeNumber: number]: number }>({});
     const [submitToDatabase, setSubmitToDatabase] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Initialize with current par values
+    // Initialize with current par and distance values
     useEffect(() => {
         const layout = course.layouts?.[layoutId];
         const pars: { [holeNumber: number]: number } = {};
+        const distances: { [holeNumber: number]: number } = {};
 
         if (layout?.holes) {
-            // Get pars from layout
+            // Get pars and distances from layout
             for (let i = 1; i <= 18; i++) {
                 pars[i] = layout.holes[i]?.par || 3;
+                distances[i] = layout.holes[i]?.distance || 0;
             }
         } else {
-            // Fallback: default all to par 3
+            // Fallback: default all to par 3, distance 0
             for (let i = 1; i <= 18; i++) {
                 pars[i] = 3;
+                distances[i] = 0;
             }
         }
 
         setHolePars(pars);
+        setHoleDistances(distances);
     }, [course, layoutId]);
 
     const handleParChange = (holeNumber: number, value: string) => {
@@ -54,12 +65,22 @@ export default function CourseAmendmentModal({
         }
     };
 
+    const handleDistanceChange = (holeNumber: number, value: string) => {
+        const distanceValue = parseInt(value, 10);
+        if (!isNaN(distanceValue) && distanceValue >= 0) {
+            setHoleDistances(prev => ({
+                ...prev,
+                [holeNumber]: distanceValue
+            }));
+        }
+    };
+
     const handleSave = async () => {
         setSaving(true);
         setError(null);
 
         try {
-            await onSave(holePars, submitToDatabase);
+            await onSave({ pars: holePars, distances: holeDistances }, submitToDatabase);
             onClose();
         } catch (err: any) {
             setError(err.message || 'Failed to save course amendments');
@@ -69,6 +90,7 @@ export default function CourseAmendmentModal({
     };
 
     const parTotal = Object.values(holePars).reduce((sum, par) => sum + par, 0);
+    const distanceTotal = Object.values(holeDistances).reduce((sum, dist) => sum + dist, 0);
 
     return (
         <div
@@ -91,7 +113,7 @@ export default function CourseAmendmentModal({
                 className="card"
                 style={{
                     width: '100%',
-                    maxWidth: '600px',
+                    maxWidth: '800px',
                     maxHeight: '90vh',
                     overflowY: 'auto',
                     backgroundColor: '#1e1e1e'
@@ -99,7 +121,7 @@ export default function CourseAmendmentModal({
                 onClick={(e) => e.stopPropagation()}
             >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h2>Amend Course Par Values</h2>
+                    <h2>Amend Course Details</h2>
                     <button
                         className="btn"
                         onClick={onClose}
@@ -135,91 +157,92 @@ export default function CourseAmendmentModal({
                     </div>
                 )}
 
-                {/* Par Input Grid */}
+                {/* Par & Distance Input Grid */}
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(6, 1fr)',
-                    gap: '0.75rem',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                    gap: '1rem',
                     marginBottom: '1.5rem'
                 }}>
                     {Array.from({ length: 18 }, (_, i) => i + 1).map(holeNumber => (
-                        <div key={holeNumber} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                            <label style={{
-                                fontSize: '0.75rem',
-                                color: 'var(--text-light)',
-                                fontWeight: 500
-                            }}>
+                        <div key={holeNumber} style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.75rem',
+                            backgroundColor: 'rgba(255,255,255,0.05)',
+                            borderRadius: '8px'
+                        }}>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 'bold', color: 'var(--text-light)', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.25rem' }}>
                                 Hole {holeNumber}
-                            </label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <button
-                                    onClick={() => handleParChange(holeNumber, ((holePars[holeNumber] || 3) - 1).toString())}
-                                    style={{
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '6px',
-                                        border: '1px solid var(--border)',
-                                        backgroundColor: 'var(--bg)',
-                                        color: 'var(--text)',
-                                        fontSize: '1.25rem',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        cursor: 'pointer',
-                                        padding: 0
-                                    }}
-                                >
-                                    -
-                                </button>
-                                <div
-                                    style={{
-                                        flex: 1,
-                                        height: '32px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: '1.25rem',
-                                        fontWeight: 'bold',
-                                        backgroundColor: 'rgba(0,0,0,0.2)',
-                                        borderRadius: '6px'
-                                    }}
-                                >
-                                    {holePars[holeNumber] || 3}
+                            </div>
+
+                            {/* Par Control */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>Par</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <button
+                                        onClick={() => handleParChange(holeNumber, ((holePars[holeNumber] || 3) - 1).toString())}
+                                        style={{ width: '24px', height: '24px', borderRadius: '4px', border: 'none', backgroundColor: 'var(--bg)', color: 'var(--text)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >-</button>
+                                    <span style={{ width: '20px', textAlign: 'center', fontWeight: 'bold' }}>{holePars[holeNumber] || 3}</span>
+                                    <button
+                                        onClick={() => handleParChange(holeNumber, ((holePars[holeNumber] || 3) + 1).toString())}
+                                        style={{ width: '24px', height: '24px', borderRadius: '4px', border: 'none', backgroundColor: 'var(--bg)', color: 'var(--text)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >+</button>
                                 </div>
-                                <button
-                                    onClick={() => handleParChange(holeNumber, ((holePars[holeNumber] || 3) + 1).toString())}
+                            </div>
+
+                            {/* Distance Input */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>Dist.</span>
+                                <input
+                                    type="number"
+                                    value={holeDistances[holeNumber] || ''}
+                                    onChange={(e) => handleDistanceChange(holeNumber, e.target.value)}
+                                    placeholder="0"
                                     style={{
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '6px',
+                                        width: '60px',
+                                        padding: '0.25rem',
+                                        borderRadius: '4px',
                                         border: '1px solid var(--border)',
                                         backgroundColor: 'var(--bg)',
                                         color: 'var(--text)',
-                                        fontSize: '1.25rem',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        cursor: 'pointer',
-                                        padding: 0
+                                        textAlign: 'right',
+                                        fontSize: '0.875rem'
                                     }}
-                                >
-                                    +
-                                </button>
+                                />
                             </div>
                         </div>
                     ))}
                 </div>
 
-                {/* Par Total */}
+                {/* Totals */}
                 <div style={{
-                    padding: '0.75rem',
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    borderRadius: '8px',
-                    marginBottom: '1.5rem',
-                    textAlign: 'center'
+                    display: 'flex',
+                    gap: '1rem',
+                    marginBottom: '1.5rem'
                 }}>
-                    <span style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>Total Par: </span>
-                    <strong style={{ fontSize: '1.25rem', color: 'var(--primary)' }}>{parTotal}</strong>
+                    <div style={{
+                        flex: 1,
+                        padding: '0.75rem',
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        borderRadius: '8px',
+                        textAlign: 'center'
+                    }}>
+                        <span style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>Total Par: </span>
+                        <strong style={{ fontSize: '1.25rem', color: 'var(--primary)' }}>{parTotal}</strong>
+                    </div>
+                    <div style={{
+                        flex: 1,
+                        padding: '0.75rem',
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        borderRadius: '8px',
+                        textAlign: 'center'
+                    }}>
+                        <span style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>Total Distance: </span>
+                        <strong style={{ fontSize: '1.25rem', color: 'var(--info)' }}>{distanceTotal}</strong>
+                    </div>
                 </div>
 
                 {/* Submit to Database Checkbox */}

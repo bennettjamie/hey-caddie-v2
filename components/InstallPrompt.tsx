@@ -82,7 +82,7 @@ export default function InstallPrompt() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
                 <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
-                        Install Hey Caddy
+                        Install Hey Caddie!
                     </div>
                     <div style={{ fontSize: '0.875rem', color: 'var(--text-light)' }}>
                         {isIOS

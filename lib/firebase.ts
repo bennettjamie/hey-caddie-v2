@@ -52,7 +52,11 @@ try {
     console.error('Error initializing Firebase:', error);
 }
 
-export { db, auth, isFirebaseConfigured };
+// Helper functions to safely get instances
+export const getFirebaseAuth = () => auth;
+export const getFirebaseDb = () => db;
+
+export { app, db, auth, isFirebaseConfigured };
 
 
 

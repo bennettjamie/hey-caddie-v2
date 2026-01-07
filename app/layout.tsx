@@ -2,25 +2,26 @@ import './globals.css'
 import type { Metadata, Viewport } from 'next'
 import { VoiceProvider } from '@/context/VoiceContext'
 import { GameProvider } from '@/context/GameContext'
+import { ThemeProvider } from '@/context/ThemeContext'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import OfflineSyncProvider from '@/components/OfflineSyncProvider'
 
 export const metadata: Metadata = {
-    title: 'Hey Caddy',
+    title: 'Hey Caddie!',
     description: 'Voice-activated Disc Golf Caddy',
     manifest: '/manifest.json',
     appleWebApp: {
         capable: true,
         statusBarStyle: 'black-translucent',
-        title: 'Hey Caddy',
+        title: 'Hey Caddie!',
     },
     formatDetection: {
         telephone: false,
     },
     openGraph: {
         type: 'website',
-        siteName: 'Hey Caddy',
-        title: 'Hey Caddy - Voice-activated Disc Golf Caddy',
+        siteName: 'Hey Caddie!',
+        title: 'Hey Caddie! - Voice-activated Disc Golf Caddy',
         description: 'Score your rounds using voice commands, manage bets, and track your game history.',
     },
     icons: {
@@ -44,27 +45,29 @@ export default function RootLayout({
     children: React.ReactNode
 }) {
     return (
-        <html lang="en">
+        <html lang="en" suppressHydrationWarning>
             <head>
                 {/* iOS PWA Meta Tags */}
                 <meta name="apple-mobile-web-app-capable" content="yes" />
                 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-                <meta name="apple-mobile-web-app-title" content="Hey Caddy" />
+                <meta name="apple-mobile-web-app-title" content="Hey Caddie!" />
                 <link rel="apple-touch-icon" href="/icon-192x192.png" />
                 <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png" />
                 <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png" />
-                
+
                 {/* Android/Chrome PWA Meta Tags */}
                 <meta name="mobile-web-app-capable" content="yes" />
-                <meta name="application-name" content="Hey Caddy" />
+                <meta name="application-name" content="Hey Caddie!" />
             </head>
             <body suppressHydrationWarning>
                 <ErrorBoundary>
                     <VoiceProvider>
                         <GameProvider>
-                            <OfflineSyncProvider>
-                                {children}
-                            </OfflineSyncProvider>
+                            <ThemeProvider>
+                                <OfflineSyncProvider>
+                                    {children}
+                                </OfflineSyncProvider>
+                            </ThemeProvider>
                         </GameProvider>
                     </VoiceProvider>
                 </ErrorBoundary>

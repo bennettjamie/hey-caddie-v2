@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useGame } from '@/context/GameContext';
 import { useVoice } from '@/context/VoiceContext';
 import CourseSelector from '@/components/CourseSelector';
@@ -49,16 +50,147 @@ export default function Home() {
     const [voiceData, setVoiceData] = useState<{ course?: Course, players?: string[] }>({});
     const [showVoiceHelp, setShowVoiceHelp] = useState(false);
 
+    // Join Round State
+    const [showJoinModal, setShowJoinModal] = useState(false);
+    const [joinRoundId, setJoinRoundId] = useState('');
+    const [isJoining, setIsJoining] = useState(false);
+    const { loadRound } = useGame();
+
+    const handleJoinRound = async () => {
+        if (!joinRoundId.trim()) return;
+        setIsJoining(true);
+        try {
+            const { getRound } = await import('@/lib/rounds');
+            const roundData = await getRound(joinRoundId.trim());
+
+            if (roundData) {
+                // Convert Firestore Round to GameRound format
+                // Need to ensure types match. Firestore round stores date as string usually.
+                // We might need to fetch course details if not fully embedded?
+                // The round object from Firestore has courseId.
+                // We need the full Course object for the UI to work (pars, names).
+                // Let's fetch the course.
+
+                const { getCourse } = await import('@/lib/courses');
+                let course: Course | null = null;
+
+                if (roundData.courseId) {
+                    // Try to find by ID
+                    const allCourses = await getAllCourses(); // Or getCourse(id)
+                    course = allCourses.find(c => c.id === roundData.courseId) || null;
+                }
+
+                if (!course) {
+                    alert('Could not find course information for this round.');
+                    setIsJoining(false);
+                    return;
+                }
+
+                // Construct GameRound
+                // We need to map the players too. Round has player IDs.
+                // We should ideally fetch player profiles, but for now we can rely on ID if we don't have name.
+                // Wait, roundData.players is just IDs.
+                // We need player objects {id, name}. 
+                // We can fetch all players and map.
+                const { getAllPlayers } = await import('@/lib/players');
+                const allPlayers = await getAllPlayers();
+
+                const playerObjects = roundData.players.map((pid: string) => {
+                    const found = allPlayers.find(p => p.id === pid);
+                    return found || { id: pid, name: 'Unknown Player' };
+                });
+
+                const gameRound: any = {
+                    ...roundData,
+                    course: course,
+                    players: playerObjects,
+                    activeHole: 1, // Default or calculate based on scores?
+                    currentTeeIndex: 0,
+                    teeOrder: playerObjects.map(p => p.id),
+                    status: 'active'
+                };
+
+                loadRound(gameRound);
+            } else {
+                alert('Round not found.');
+            }
+        } catch (e) {
+            console.error('Error joining round:', e);
+            alert('Failed to join round.');
+        } finally {
+            setIsJoining(false);
+        }
+    };
+
     // Auth State
     const [user, setUser] = useState<User | null>(null);
     const [showLanding, setShowLanding] = useState(true);
 
     useEffect(() => {
         if (!auth) return;
-        const unsubscribe = onAuthStateChanged(auth, (u) => {
-            setUser(u);
-            // If user is logged in, hide landing, OR if they manually proceeded
-            if (u) setShowLanding(false);
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            setUser(firebaseUser);
+
+            if (firebaseUser) {
+                // Hide landing page when logged in
+                setShowLanding(false);
+
+                // Create or update User profile in Firestore
+                try {
+                    const { getUser, createUserWithUID, updateUser } = await import('@/lib/users');
+                    const { searchPlayers } = await import('@/lib/players');
+
+                    let userProfile = await getUser(firebaseUser.uid);
+
+                    if (!userProfile) {
+                        // Create new User profile
+                        await createUserWithUID(firebaseUser.uid, {
+                            displayName: firebaseUser.displayName || 'Anonymous',
+                            email: firebaseUser.email!,
+                            photoURL: firebaseUser.photoURL || undefined,
+                            friendIds: [],
+                            friendCount: 0,
+                            settings: {
+                                shareStats: true,
+                                notificationsEnabled: true,
+                                privacyLevel: 'friends'
+                            },
+                            stats: {
+                                roundsPlayed: 0,
+                                averageScore: 0
+                            },
+                            lastActive: new Date(),
+                            recentPlayers: [],
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        });
+
+                        // Auto-link Players with matching email
+                        if (firebaseUser.email) {
+                            const { linkPlayerToUser } = await import('@/lib/players');
+                            const matchingPlayers = await searchPlayers(firebaseUser.email);
+
+                            for (const player of matchingPlayers) {
+                                if (player.email?.toLowerCase() === firebaseUser.email.toLowerCase() && !player.userId) {
+                                    await linkPlayerToUser(player.id, firebaseUser.uid);
+                                    console.log(`Linked player ${player.name} to user ${firebaseUser.uid}`);
+                                }
+                            }
+                        }
+
+                        // Sync stats from linked players
+                        const { syncUserStatsFromPlayers } = await import('@/lib/users');
+                        await syncUserStatsFromPlayers(firebaseUser.uid);
+                    } else {
+                        // Update last active timestamp
+                        await updateUser(firebaseUser.uid, {
+                            lastActive: new Date()
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error creating/updating user profile:', error);
+                }
+            }
         });
         return () => unsubscribe();
     }, []);
@@ -452,7 +584,14 @@ export default function Home() {
         <main className="container">
             {/* Header / Nav */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Hey Caddy ⛳</h1>
+                <Image
+                    src="/logo.png"
+                    alt="Hey Caddie!"
+                    width={180}
+                    height={60}
+                    priority
+                    style={{ height: 'auto', width: 'auto', maxHeight: '60px' }}
+                />
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <Link href="/history" className="btn btn-secondary" style={{ fontSize: '0.9rem' }}>
                         History
@@ -510,7 +649,7 @@ export default function Home() {
                                         voiceStep === 'confirm' ? "Say 'Yes' to start" :
                                             "Listening..."
                         ) : (
-                            isSupported ? "Tap or say 'Hey Caddy' to start" : "Voice commands not supported"
+                            isSupported ? "Tap or say 'Hey Caddie!' to start" : "Voice commands not supported"
                         )}
                     </p>
                     {transcript && isListening && (
@@ -610,6 +749,48 @@ export default function Home() {
                     onClose={() => setShowCourseSelector(false)}
                     initialSearch={voiceCourseSearch}
                 />
+            )}
+
+            {/* Join Round Modal */}
+            {showJoinModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 2000
+                }}>
+                    <div className="card" style={{ width: '90%', maxWidth: '400px' }}>
+                        <h2 style={{ marginBottom: '1rem' }}>Join Live Round</h2>
+                        <input
+                            type="text"
+                            placeholder="Enter Round ID"
+                            value={joinRoundId}
+                            onChange={(e) => setJoinRoundId(e.target.value)}
+                            style={{
+                                width: '100%', padding: '0.75rem', marginBottom: '1rem',
+                                backgroundColor: 'var(--bg)', color: 'var(--text)',
+                                border: '1px solid var(--border)', borderRadius: '8px'
+                            }}
+                        />
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                                className="btn"
+                                onClick={() => setShowJoinModal(false)}
+                                style={{ flex: 1, backgroundColor: 'var(--border)' }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="btn"
+                                onClick={handleJoinRound}
+                                disabled={isJoining || !joinRoundId.trim()}
+                                style={{ flex: 1, backgroundColor: 'var(--primary)' }}
+                            >
+                                {isJoining ? 'Joining...' : 'Join'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             <InstallPrompt />

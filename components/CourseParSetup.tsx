@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { updateCourseLayoutPars } from '@/lib/courses';
+import { updateCourseLayoutDetails } from '@/lib/courses';
 import { Course } from '@/types/firestore';
 
 interface CourseParSetupProps {
@@ -40,7 +40,7 @@ export default function CourseParSetup({ course, layoutKey, onComplete, onCancel
         setIsSaving(true);
         try {
             // Pass the course object directly to avoid lookup issues
-            await updateCourseLayoutPars(course.id, layoutKey, holePars, course);
+            await updateCourseLayoutDetails(course.id, layoutKey, holePars, undefined, course);
             onComplete();
         } catch (error: any) {
             console.error('Error saving pars:', error);

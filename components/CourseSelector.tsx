@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { getAllCourses, getLocalCourses, searchCourses, createCourse } from '@/lib/courses';
+import { searchPublicCourses, forkCourseToLocal, PublicCourseSummary } from '@/lib/publicCourses';
 import { saveLocalCourses } from '@/lib/courses';
 import CourseParSetup from './CourseParSetup';
+import CourseImporter from './CourseImporter';
 import { Course } from '@/types/firestore';
 
 export default function CourseSelector({ onSelect, onClose, initialSearch = '' }: { onSelect: (course: Course) => void, onClose?: () => void, initialSearch?: string }) {
@@ -17,14 +19,23 @@ export default function CourseSelector({ onSelect, onClose, initialSearch = '' }
     const [isAdding, setIsAdding] = useState(false);
     const [newlyCreatedCourse, setNewlyCreatedCourse] = useState<Course | null>(null);
     const [showParSetup, setShowParSetup] = useState(false);
+    const [activeTab, setActiveTab] = useState<'local' | 'community'>('local');
+    const [publicCourses, setPublicCourses] = useState<PublicCourseSummary[]>([]);
+    const [isForking, setIsForking] = useState(false);
+    const [showImporter, setShowImporter] = useState(false);
 
     useEffect(() => {
-        if (initialSearch) {
-            handleSearch(initialSearch);
+        if (activeTab === 'local') {
+            if (initialSearch) {
+                handleSearch(initialSearch);
+            } else {
+                loadCourses();
+            }
         } else {
-            loadCourses();
+            // Load initial public courses (e.g. top rated)
+            handleSearch(searchTerm);
         }
-    }, []);
+    }, [activeTab]);
 
     const loadCourses = async () => {
         setLoading(true);
@@ -84,18 +95,41 @@ export default function CourseSelector({ onSelect, onClose, initialSearch = '' }
 
     const handleSearch = async (term: string) => {
         setSearchTerm(term);
-        if (term.trim()) {
-            setLoading(true);
-            try {
-                const results = await searchCourses(term);
-                setCourses(results);
-            } catch (error) {
-                console.error('Error searching courses:', error);
-            } finally {
-                setLoading(false);
+        setLoading(true);
+        try {
+            if (activeTab === 'local') {
+                if (term.trim()) {
+                    const results = await searchCourses(term);
+                    setCourses(results);
+                } else {
+                    loadCourses();
+                }
+            } else {
+                // Public search
+                const results = await searchPublicCourses(term);
+                setPublicCourses(results);
             }
-        } else {
-            loadCourses();
+        } catch (error) {
+            console.error('Error searching courses:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleForkCourse = async (publicCourseId: string) => {
+        setIsForking(true);
+        try {
+            const newId = await forkCourseToLocal(publicCourseId);
+            alert('Course downloaded to My Courses!');
+            setActiveTab('local');
+            // Reload local courses
+            await loadCourses();
+            // Optionally select it immediately if we wanted to find it
+        } catch (error: any) {
+            console.error('Error forking course:', error);
+            alert('Failed to download course: ' + (error.message || 'Unknown error'));
+        } finally {
+            setIsForking(false);
         }
     };
 
@@ -197,6 +231,38 @@ export default function CourseSelector({ onSelect, onClose, initialSearch = '' }
     return (
         <div>
             <div className="card">
+                {/* Tabs */}
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '1rem' }}>
+                    <button
+                        style={{
+                            flex: 1,
+                            padding: '0.75rem',
+                            background: activeTab === 'local' ? 'var(--background)' : 'transparent',
+                            borderBottom: activeTab === 'local' ? '2px solid var(--primary)' : 'none',
+                            fontWeight: activeTab === 'local' ? 'bold' : 'normal',
+                            color: activeTab === 'local' ? 'var(--foreground)' : 'var(--text-light)',
+                            cursor: 'pointer'
+                        }}
+                        onClick={() => setActiveTab('local')}
+                    >
+                        My Courses
+                    </button>
+                    <button
+                        style={{
+                            flex: 1,
+                            padding: '0.75rem',
+                            background: activeTab === 'community' ? 'var(--background)' : 'transparent',
+                            borderBottom: activeTab === 'community' ? '2px solid var(--primary)' : 'none',
+                            fontWeight: activeTab === 'community' ? 'bold' : 'normal',
+                            color: activeTab === 'community' ? 'var(--foreground)' : 'var(--text-light)',
+                            cursor: 'pointer'
+                        }}
+                        onClick={() => setActiveTab('community')}
+                    >
+                        Community Wiki
+                    </button>
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {onClose && (
@@ -384,78 +450,134 @@ export default function CourseSelector({ onSelect, onClose, initialSearch = '' }
                 </div>
             )}
 
-            {courses.length === 0 ? (
-                <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
-                    <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No courses found matching "{searchTerm}".</p>
-                    <p style={{ color: 'var(--text-light)', marginBottom: '1.5rem' }}>
-                        Can't find your course? Add it manually!
+            {activeTab === 'local' ? (
+                courses.length === 0 ? (
+                    <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
+                        <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No courses found matching "{searchTerm}".</p>
+                        <p style={{ color: 'var(--text-light)', marginBottom: '1.5rem' }}>
+                            Can't find your course? Add it manually!
+                        </p>
+                        <button
+                            className="btn"
+                            onClick={() => setShowAddModal(true)}
+                            style={{
+                                backgroundColor: 'var(--success)',
+                                padding: '0.75rem 1.5rem',
+                                fontSize: '1rem'
+                            }}
+                        >
+                            + Add "{searchTerm || 'New Course'}"
+                        </button>
+                    </div>
+                ) : (
+                    <div>
+                        {courses.map(course => {
+                            const layoutNames = getLayoutNames(course);
+                            return (
+                                <div key={course.id} className="card" style={{ marginTop: '1rem' }}>
+                                    <div>
+                                        <h3 style={{ marginBottom: '0.25rem' }}>{course.name}</h3>
+                                        {course.location && (
+                                            <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', margin: 0 }}>
+                                                {course.location}
+                                            </p>
+                                        )}
+                                    </div>
+                                    {layoutNames.length > 0 ? (
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                                            {layoutNames.map(layoutName => {
+                                                const layoutKey = Object.keys(course.layouts || {}).find(
+                                                    key => course.layouts![key].name === layoutName
+                                                );
+                                                return (
+                                                    <button
+                                                        key={layoutName}
+                                                        className="btn"
+                                                        style={{
+                                                            fontSize: '0.875rem',
+                                                            padding: '0.5rem 1rem',
+                                                            backgroundColor: 'var(--info)'
+                                                        }}
+                                                        onClick={() =>
+                                                            onSelect({
+                                                                ...course,
+                                                                selectedLayoutKey: layoutKey
+                                                            })
+                                                        }
+                                                    >
+                                                        {layoutName}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <button
+                                            className="btn"
+                                            style={{ marginTop: '1rem', backgroundColor: 'var(--info)' }}
+                                            onClick={() => onSelect({ ...course, selectedLayoutKey: 'default' })}
+                                        >
+                                            Select Course
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )
+            ) : (
+                // COMMUNITY TAB
+                publicCourses.length === 0 ? (
+                    <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
+                        <p>No community courses found.</p>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
+                            Try searching for major courses like "DeLaveaga" or "Maple Hill".
+                        </p>
+                    </div>
+                ) : (
+                    <div>
+                        {publicCourses.map(course => (
+                            <div key={course.id} className="card" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <h3 style={{ marginBottom: '0.25rem' }}>{course.name}</h3>
+                                    <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', margin: 0 }}>
+                                        {course.location} • {course.layoutCount} Layouts
+                                    </p>
+                                </div>
+                                <button
+                                    className="btn"
+                                    disabled={isForking}
+                                    style={{ backgroundColor: 'var(--success)', minWidth: '100px' }}
+                                    onClick={() => handleForkCourse(course.id)}
+                                >
+                                    {isForking ? '...' : 'Download'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )
+            )}
+
+            {activeTab === 'community' && (
+                <div style={{ marginTop: '2rem', textAlign: 'center', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+                    <p style={{ color: 'var(--text-light)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                        Want to help grow the database?
                     </p>
                     <button
                         className="btn"
-                        onClick={() => setShowAddModal(true)}
-                        style={{
-                            backgroundColor: 'var(--success)',
-                            padding: '0.75rem 1.5rem',
-                            fontSize: '1rem'
-                        }}
+                        style={{ backgroundColor: 'var(--secondary)', fontSize: '0.8rem' }}
+                        onClick={() => setShowImporter(true)}
                     >
-                        + Add "{searchTerm || 'New Course'}"
+                        Contribute Course Data
                     </button>
                 </div>
-            ) : (
-                <div>
-                    {courses.map(course => {
-                        const layoutNames = getLayoutNames(course);
-                        return (
-                            <div key={course.id} className="card" style={{ marginTop: '1rem' }}>
-                                <div>
-                                    <h3 style={{ marginBottom: '0.25rem' }}>{course.name}</h3>
-                                    {course.location && (
-                                        <p style={{ fontSize: '0.875rem', color: 'var(--text-light)', margin: 0 }}>
-                                            {course.location}
-                                        </p>
-                                    )}
-                                </div>
-                                {layoutNames.length > 0 ? (
-                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                                        {layoutNames.map(layoutName => {
-                                            const layoutKey = Object.keys(course.layouts || {}).find(
-                                                key => course.layouts![key].name === layoutName
-                                            );
-                                            return (
-                                                <button
-                                                    key={layoutName}
-                                                    className="btn"
-                                                    style={{
-                                                        fontSize: '0.875rem',
-                                                        padding: '0.5rem 1rem',
-                                                        backgroundColor: 'var(--info)'
-                                                    }}
-                                                    onClick={() =>
-                                                        onSelect({
-                                                            ...course,
-                                                            selectedLayoutKey: layoutKey
-                                                        })
-                                                    }
-                                                >
-                                                    {layoutName}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <button
-                                        className="btn"
-                                        style={{ marginTop: '1rem', backgroundColor: 'var(--info)' }}
-                                        onClick={() => onSelect({ ...course, selectedLayoutKey: 'default' })}
-                                    >
-                                        Select Course
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
+            )}
+
+            {showImporter && (
+                <CourseImporter onClose={() => {
+                    setShowImporter(false);
+                    // Refresh public list
+                    handleSearch(searchTerm);
+                }} />
             )}
 
             {showParSetup && newlyCreatedCourse && (

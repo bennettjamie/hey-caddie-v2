@@ -3,10 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { getPlayer, Player } from '@/lib/players';
 import { getCompletedRounds, getLocalRounds } from '@/lib/rounds';
 import { Round } from '@/types/firestore';
 import { calculatePlayerStatistics, PlayerStatistics, getScoreDisplay, getScoreColor } from '@/lib/statistics';
+import { addFriend, removeFriend, areFriends } from '@/lib/friends';
 
 export default function PlayerProfile() {
     const params = useParams();
@@ -15,6 +18,36 @@ export default function PlayerProfile() {
     const [player, setPlayer] = useState<Player | null>(null);
     const [stats, setStats] = useState<PlayerStatistics | null>(null);
     const [loading, setLoading] = useState(true);
+    const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+    const [isFriend, setIsFriend] = useState(false);
+    const [isCheckingFriend, setIsCheckingFriend] = useState(false);
+
+    // Auth state
+    useEffect(() => {
+        if (!auth) return;
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setCurrentUser(user);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    // Check if already friends
+    useEffect(() => {
+        const checkFriendship = async () => {
+            if (currentUser && player?.userId && player.userId !== currentUser.uid) {
+                setIsCheckingFriend(true);
+                try {
+                    const friendStatus = await areFriends(currentUser.uid, player.userId);
+                    setIsFriend(friendStatus);
+                } catch (error) {
+                    console.error('Error checking friendship:', error);
+                } finally {
+                    setIsCheckingFriend(false);
+                }
+            }
+        };
+        checkFriendship();
+    }, [currentUser, player]);
 
     useEffect(() => {
         loadPlayerData();
@@ -47,6 +80,29 @@ export default function PlayerProfile() {
         }
     };
 
+    const handleAddFriend = async () => {
+        if (!currentUser || !player?.userId) return;
+        try {
+            await addFriend(currentUser.uid, player.userId);
+            setIsFriend(true);
+        } catch (error) {
+            console.error('Error adding friend:', error);
+            alert('Failed to add friend');
+        }
+    };
+
+    const handleRemoveFriend = async () => {
+        if (!currentUser || !player?.userId) return;
+        if (!confirm('Remove this friend?')) return;
+        try {
+            await removeFriend(currentUser.uid, player.userId);
+            setIsFriend(false);
+        } catch (error) {
+            console.error('Error removing friend:', error);
+            alert('Failed to remove friend');
+        }
+    };
+
     if (loading) {
         return (
             <main className="container">
@@ -74,10 +130,39 @@ export default function PlayerProfile() {
                 </Link>
             </div>
 
-            <div style={{ marginBottom: '2rem' }}>
-                <h1>{player.name}</h1>
-                {player.email && (
-                    <p style={{ color: 'var(--text-light)' }}>{player.email}</p>
+            <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                <div>
+                    <h1 style={{ margin: 0, marginBottom: '0.5rem' }}>{player.name}</h1>
+                    {player.email && (
+                        <p style={{ color: 'var(--text-light)', margin: 0 }}>{player.email}</p>
+                    )}
+                </div>
+
+                {/* Friend Button - only show if player has userId and is not current user */}
+                {currentUser && player.userId && player.userId !== currentUser.uid && (
+                    <div>
+                        {isCheckingFriend ? (
+                            <button className="btn" disabled style={{ opacity: 0.6 }}>
+                                Checking...
+                            </button>
+                        ) : isFriend ? (
+                            <button
+                                className="btn"
+                                onClick={handleRemoveFriend}
+                                style={{ backgroundColor: 'var(--danger)' }}
+                            >
+                                Remove Friend
+                            </button>
+                        ) : (
+                            <button
+                                className="btn"
+                                onClick={handleAddFriend}
+                                style={{ backgroundColor: 'var(--primary)' }}
+                            >
+                                Add as Friend
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
 

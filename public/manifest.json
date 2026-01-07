@@ -1,6 +1,6 @@
 {
-    "name": "Hey Caddy",
-    "short_name": "Hey Caddy",
+    "name": "Hey Caddie!",
+    "short_name": "Hey Caddie!",
     "description": "Voice-activated Disc Golf Caddy",
     "start_url": "/",
     "display": "standalone",
@@ -22,7 +22,11 @@
             "purpose": "any maskable"
         }
     ],
-    "categories": ["sports", "games", "utilities"],
+    "categories": [
+        "sports",
+        "games",
+        "utilities"
+    ],
     "shortcuts": [
         {
             "name": "Start Round",

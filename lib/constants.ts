@@ -109,6 +109,9 @@ export const SYNC_CONFIG = {
 
   /** Delay (ms) for operation processing */
   OPERATION_DELAY_MS: 100,
+
+  /** Interval (ms) for periodic sync checks (30 seconds) */
+  PERIODIC_SYNC_INTERVAL_MS: 30000,
 } as const;
 
 // ============================================================================
@@ -173,6 +176,9 @@ export const CACHE_LIMITS = {
   /** Maximum number of rounds to keep in history */
   MAX_ROUND_HISTORY: 50,
 
+  /** Maximum number of courses to store in localStorage */
+  MAX_COURSES_STORED: 100,
+
   /** Maximum number of recent courses to display */
   MAX_RECENT_COURSES_DISPLAY: 5,
 
@@ -181,6 +187,9 @@ export const CACHE_LIMITS = {
 
   /** Maximum number of nearby courses to display */
   MAX_NEARBY_COURSES: 5,
+
+  /** Default search radius for nearby courses (in kilometers) */
+  DEFAULT_SEARCH_RADIUS_KM: 50,
 
   /** Maximum number of recent players to display */
   MAX_RECENT_PLAYERS_DISPLAY: 20,
@@ -199,6 +208,27 @@ export const CACHE_LIMITS = {
 export const QUERY_LIMITS = {
   /** Default limit for MRTZ ledger queries */
   MRTZ_LEDGER_DEFAULT: 100,
+
+  /** Default limit for user rounds queries */
+  USER_ROUNDS_DEFAULT: 50,
+
+  /** Default limit for completed rounds queries */
+  COMPLETED_ROUNDS_DEFAULT: 100,
+
+  /** Default limit for course rounds queries */
+  COURSE_ROUNDS_DEFAULT: 50,
+
+  /** Default limit for fetching all players */
+  ALL_PLAYERS_DEFAULT: 100,
+
+  /** Maximum number of player search results */
+  PLAYER_SEARCH_RESULTS: 20,
+
+  /** Fallback limit for player search when no prefix match */
+  PLAYER_SEARCH_FALLBACK: 100,
+
+  /** Default limit for frequently played players */
+  FREQUENTLY_PLAYED_PLAYERS: 20,
 
   /** Maximum number of player suggestions to show */
   PLAYER_SUGGESTIONS: 5,

@@ -12,9 +12,11 @@ import { Course } from '@/types/firestore';
 import { Player } from '@/lib/players';
 import { PlayerMRTZSummary, OutstandingBalance, MRTZLedgerEntry } from '@/types/mrtz';
 import { NassauResult } from '@/lib/betting';
-
-// Only restore rounds that started within the last 30 minutes
-const MAX_ROUND_AGE_MINUTES = 30;
+import { AchievementType } from '@/lib/stats';
+import { logger } from '@/lib/logger';
+import { STORAGE_KEYS, ROUND_STATUS, MAX_ROUND_AGE_MINUTES } from '@/lib/constants';
+import { updateFriendActivity, areFriends } from '@/lib/friends';
+import { auth } from '@/lib/firebase';
 
 interface LedgerOptions {
     limit?: number;
@@ -47,7 +49,7 @@ interface GameContextType {
     clearBets: () => void;
     endRound: () => Promise<FinalRoundData>;
     isLoading: boolean;
-    updateCourseLayout: (layoutId: string, holePars: { [holeNumber: number]: number }) => void;
+    updateCourseLayout: (layoutId: string, holePars: { [holeNumber: number]: number }, holeDistances?: { [holeNumber: number]: number }) => void;
     hasRecentRound: () => boolean;
     restoreRecentRound: () => void;
     addPlayerToRound: (player: Player) => void;
@@ -58,6 +60,13 @@ interface GameContextType {
     getPlayerMRTZBalance: (playerId: string) => Promise<PlayerMRTZSummary | null>;
     getPlayerLedger: (playerId: string, options?: LedgerOptions) => Promise<MRTZLedgerEntry[]>;
     getOutstandingBalances: (playerId: string) => Promise<{ owedToMe: OutstandingBalance[]; iOwe: OutstandingBalance[] }>;
+    achievement: { type: AchievementType; details: string } | null;
+    clearAchievement: () => void;
+    roundAchievements: Array<{ playerId: string; type: AchievementType; details: string }>;
+    liveMode: boolean;
+    toggleLiveMode: () => Promise<void>;
+    roundId: string | null;
+    loadRound: (round: GameRound) => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -84,17 +93,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (typeof window !== 'undefined') {
             setIsLoading(true);
 
-            // EXPLICITLY clear all state first - NEVER auto-restore
-            setCurrentRound(null);
-            setFundatoryBets([]);
-            setActiveBets({});
-
             // Handle localStorage cleanup only (never restore from here)
-            const savedRound = localStorage.getItem('currentRound');
+            const savedRound = localStorage.getItem(STORAGE_KEYS.CURRENT_ROUND);
             if (savedRound) {
                 try {
                     const parsed = JSON.parse(savedRound);
-                    if (parsed.status === 'active' || parsed.status === 'ended' || !parsed.status) {
+                    if (parsed.status === ROUND_STATUS.ACTIVE || parsed.status === ROUND_STATUS.ENDED || !parsed.status) {
                         // Check if round is stale and needs cleanup
                         const startTime = parsed.startTime ? new Date(parsed.startTime) : null;
                         const now = new Date();
@@ -102,7 +106,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                             ? (now.getTime() - startTime.getTime()) / (1000 * 60)
                             : Infinity;
 
-                        // Only clean up stale rounds, never restore
+                        // Only clean up stale rounds older than MAX_ROUND_AGE_MINUTES
                         if (minutesSinceStart > MAX_ROUND_AGE_MINUTES || !startTime || isNaN(startTime.getTime())) {
                             // Round is too old or missing startTime, save as partial then clear
                             const ageDescription = minutesSinceStart === Infinity
@@ -131,52 +135,101 @@ export function GameProvider({ children }: { children: ReactNode }) {
                                         await saveRound(partialRound);
                                         // Removed console.log`Saved stale round as partial to database (${ageDescription})`);
                                     } catch (error) {
-                                        console.error('Error saving partial round:', error);
+                                        logger.error('Failed to save stale round as partial', error, {
+                                            roundAge: ageDescription,
+                                            hasScores: Object.keys(parsed.scores).length > 0,
+                                            courseId: parsed.course?.id,
+                                            operation: 'stale-round-cleanup',
+                                        });
                                         // Still clear even if save fails
                                     }
                                 })();
                             }
 
                             // Removed console.log`Clearing stale active round from localStorage (${ageDescription})`);
-                            localStorage.removeItem('currentRound');
-                            localStorage.removeItem('fundatoryBets');
-                            localStorage.removeItem('activeBets');
+                            localStorage.removeItem(STORAGE_KEYS.CURRENT_ROUND);
+                            localStorage.removeItem(STORAGE_KEYS.FUNDATORY_BETS);
+                            localStorage.removeItem(STORAGE_KEYS.ACTIVE_BETS);
+                            setCurrentRound(null);
                         } else {
-                            // Recent round exists but we DON'T auto-restore
-                            // It will be available via "Continue Round" or cached rounds
-                            // Removed console.log'Recent round found in localStorage but not auto-restoring. Use "Continue Round" button.');
+                            // Recent round exists - AUTO-RESTORE
+                            // Ensure all round properties are set
+                            const restoredRound: GameRound = {
+                                ...parsed,
+                                status: ROUND_STATUS.ACTIVE,
+                                activeHole: parsed.activeHole ?? 1,
+                                teeOrder: parsed.teeOrder || (parsed.players ? parsed.players.map((p: Player) => p.id || (p as any).uid).filter(Boolean) : []),
+                                currentTeeIndex: parsed.currentTeeIndex ?? 0
+                            };
+                            setCurrentRound(restoredRound);
+
+                            // Restore bets
+                            const savedFundatory = localStorage.getItem(STORAGE_KEYS.FUNDATORY_BETS);
+                            if (savedFundatory) {
+                                try {
+                                    setFundatoryBets(JSON.parse(savedFundatory));
+                                } catch (e) {
+                                    logger.error('Failed to restore fundatory bets', e, {
+                                        key: STORAGE_KEYS.FUNDATORY_BETS,
+                                        fallbackAvailable: !!parsed.fundatoryBets,
+                                    });
+                                    if (parsed.fundatoryBets) setFundatoryBets(parsed.fundatoryBets);
+                                }
+                            } else if (parsed.fundatoryBets) {
+                                setFundatoryBets(parsed.fundatoryBets);
+                            }
+
+                            const savedActiveBets = localStorage.getItem(STORAGE_KEYS.ACTIVE_BETS);
+                            if (savedActiveBets) {
+                                try {
+                                    setActiveBets(JSON.parse(savedActiveBets));
+                                } catch (e) {
+                                    logger.error('Failed to restore active bets', e, {
+                                        key: STORAGE_KEYS.ACTIVE_BETS,
+                                        fallbackAvailable: !!parsed.activeBets,
+                                    });
+                                    if (parsed.activeBets) setActiveBets(parsed.activeBets);
+                                }
+                            } else if (parsed.activeBets) {
+                                setActiveBets(parsed.activeBets);
+                            }
                         }
                     }
                 } catch (e) {
-                    console.error('Error loading saved round:', e);
+                    logger.error('Failed to load saved round', e, {
+                        key: STORAGE_KEYS.CURRENT_ROUND,
+                        operation: 'initial-load',
+                    });
                     // Clear corrupted data
-                    localStorage.removeItem('currentRound');
+                    localStorage.removeItem(STORAGE_KEYS.CURRENT_ROUND);
+                    setCurrentRound(null);
                 }
+            } else {
+                setCurrentRound(null);
             }
 
-            // Don't restore bets either - they should only exist with an active round
             setIsLoading(false);
         }
     }, []);
 
     // Save to local storage whenever state changes (only for active rounds)
     useEffect(() => {
-        if (typeof window !== 'undefined' && currentRound && currentRound.status === 'active') {
-            localStorage.setItem('currentRound', JSON.stringify(currentRound));
+        if (typeof window !== 'undefined' && currentRound && currentRound.status === ROUND_STATUS.ACTIVE) {
+            localStorage.setItem(STORAGE_KEYS.CURRENT_ROUND, JSON.stringify(currentRound));
         }
     }, [currentRound]);
 
     // Save fundatory bets to local storage
     useEffect(() => {
         if (typeof window !== 'undefined' && fundatoryBets.length >= 0) {
-            localStorage.setItem('fundatoryBets', JSON.stringify(fundatoryBets));
+            localStorage.setItem(STORAGE_KEYS.FUNDATORY_BETS, JSON.stringify(fundatoryBets));
         }
     }, [fundatoryBets]);
 
     // Save active bets to local storage
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            localStorage.setItem('activeBets', JSON.stringify(activeBets));
+            localStorage.setItem(STORAGE_KEYS.ACTIVE_BETS, JSON.stringify(activeBets));
         }
     }, [activeBets]);
 
@@ -184,7 +237,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         // Initialize tee order with player IDs (default order)
         const playerIds = selectedPlayers.map((p: Player) => p.id).filter(Boolean);
         if (playerIds.length === 0) {
-            console.error('No valid player IDs found when starting round');
+            logger.error('No valid player IDs found when starting round', new Error('Invalid player data'), {
+                selectedPlayers: selectedPlayers.map(p => ({ name: p.name, id: p.id })),
+                courseId: selectedCourse.id,
+            });
             return;
         }
 
@@ -193,28 +249,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
             players: selectedPlayers,
             scores: {}, // { holeNumber: { playerId: score } }
             startTime: new Date().toISOString(),
-            status: 'active',
+            status: ROUND_STATUS.ACTIVE,
             activeHole: 1,
             teeOrder: playerIds,
             currentTeeIndex: 0
         };
         setCurrentRound(newRound);
     };
-
-    const updateScore = useCallback((playerId: string, holeNumber: number, score: number) => {
-        setCurrentRound((prev: GameRound | null) => {
-            if (!prev) {
-                console.warn('Cannot update score: no active round');
-                return prev;
-            }
-            const newScores = { ...prev.scores };
-            if (!newScores[holeNumber]) {
-                newScores[holeNumber] = {};
-            }
-            newScores[holeNumber][playerId] = score;
-            return { ...prev, scores: newScores };
-        });
-    }, []);
 
     const setActiveHole = useCallback((hole: number) => {
         setCurrentRound((prev: GameRound | null) => {
@@ -266,7 +307,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     const setTeeOrder = useCallback((order: string[]) => {
         if (!Array.isArray(order)) {
-            console.warn('setTeeOrder called with non-array:', order);
+            logger.warn('setTeeOrder called with invalid type', {
+                receivedType: typeof order,
+                receivedValue: order,
+                expectedType: 'array',
+            });
             return;
         }
         setCurrentRound((prev: GameRound | null) => {
@@ -388,7 +433,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         // The settlement system will handle marking them as settled
                     }
                 } catch (error) {
-                    console.error('Error creating ledger entries:', error);
+                    logger.error('Failed to create ledger entries', error, {
+                        roundId: currentRound.startTime,
+                        operation: 'end-round',
+                    });
                     // Fallback to old system
                     if ((!resolution || resolution.settleToday) && settledIRL) {
                         for (const [playerId, amount] of Object.entries(roundMRTZ)) {
@@ -396,7 +444,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
                                 try {
                                     await updatePlayerMRTZ(playerId, amount);
                                 } catch (err) {
-                                    console.error(`Error updating MRTZ for player ${playerId}:`, err);
+                                    logger.error(`Failed to update MRTZ for player ${playerId}`, err, {
+                                        playerId,
+                                        amount,
+                                        roundId: currentRound.startTime,
+                                        operation: 'end-round-mrtz-update',
+                                    });
                                 }
                             }
                         }
@@ -421,10 +474,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
                             nassau: nassauResults,
                             timestamp: new Date().toISOString()
                         };
-                        const existing = localStorage.getItem('carryOverBets');
+                        const existing = localStorage.getItem(STORAGE_KEYS.CARRY_OVER_BETS);
                         const carryOvers = existing ? JSON.parse(existing) : [];
                         carryOvers.push(carryOverBets);
-                        localStorage.setItem('carryOverBets', JSON.stringify(carryOvers));
+                        localStorage.setItem(STORAGE_KEYS.CARRY_OVER_BETS, JSON.stringify(carryOvers));
                     }
                 }
 
@@ -462,8 +515,42 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     try {
                         const roundId = await saveRound(roundWithMetadata);
                         // Removed console.log'Round saved to Firebase:', roundId);
+
+                        // Update friend activity for all registered players who are friends
+                        try {
+                            const registeredPlayers = currentRound.players.filter((p: Player) => p.userId);
+
+                            // Update friend activity for each pair of registered players who are friends
+                            for (let i = 0; i < registeredPlayers.length; i++) {
+                                for (let j = i + 1; j < registeredPlayers.length; j++) {
+                                    const player1 = registeredPlayers[i];
+                                    const player2 = registeredPlayers[j];
+
+                                    if (player1.userId && player2.userId) {
+                                        // Check if they are friends
+                                        const areFriendsCheck = await areFriends(player1.userId, player2.userId);
+                                        if (areFriendsCheck) {
+                                            // Update activity for both directions
+                                            await updateFriendActivity(player1.userId, player2.userId, roundId);
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (friendError) {
+                            // Don't fail the round if friend activity update fails
+                            logger.error('Failed to update friend activity', friendError, {
+                                roundId,
+                                operation: 'update-friend-activity',
+                            });
+                        }
                     } catch (error) {
-                        console.error('Failed to save to Firebase, saving locally:', error);
+                        logger.error('Failed to save to Firebase, saving locally', error, {
+                            courseId: course?.id,
+                            layoutId: currentRound.course?.selectedLayoutKey,
+                            hasScoreData,
+                            playerCount: currentRound.players.length,
+                            operation: 'end-round-save',
+                        });
                         // Save locally as fallback
                         saveLocalRound({
                             id: `local_${Date.now()}`,
@@ -495,7 +582,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     )
                 };
             } catch (error) {
-                console.error('Error saving round:', error);
+                logger.error('Failed to save round', error, {
+                    courseId: currentRound.course?.id,
+                    hasScoreData,
+                    playerCount: currentRound.players.length,
+                    operation: 'end-round',
+                });
                 // Still proceed to cache locally even if save fails
                 // Create minimal finalRoundData if error occurred
                 finalRoundData = {
@@ -514,7 +606,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (typeof window !== 'undefined' && currentRound) {
             const endedRound = {
                 ...currentRound,
-                status: 'ended',
+                status: ROUND_STATUS.ENDED,
                 endTime: new Date().toISOString(),
                 fundatoryBets,
                 activeBets
@@ -522,7 +614,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
             // Add to cached rounds
             try {
-                const cached = localStorage.getItem('cachedRounds');
+                const cached = localStorage.getItem(STORAGE_KEYS.CACHED_ROUNDS);
                 const cachedRounds = cached ? JSON.parse(cached) : [];
                 const holesPlayed = currentRound.scores ? Object.keys(currentRound.scores).length : 0;
 
@@ -538,15 +630,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
                 ).slice(0, 50);
 
-                localStorage.setItem('cachedRounds', JSON.stringify(sorted));
+                localStorage.setItem(STORAGE_KEYS.CACHED_ROUNDS, JSON.stringify(sorted));
             } catch (e) {
-                console.error('Error saving to cached rounds:', e);
+                logger.error('Failed to save to cached rounds', e, {
+                    key: STORAGE_KEYS.CACHED_ROUNDS,
+                    holesPlayed: currentRound.scores ? Object.keys(currentRound.scores).length : 0,
+                    courseName: currentRound.course?.name,
+                    operation: 'end-round-cache',
+                });
             }
 
             // Also save as currentRound for "Continue Round" button (if recent)
             localStorage.setItem('currentRound', JSON.stringify(endedRound));
-            localStorage.setItem('fundatoryBets', JSON.stringify(fundatoryBets));
-            localStorage.setItem('activeBets', JSON.stringify(activeBets));
+            localStorage.setItem(STORAGE_KEYS.FUNDATORY_BETS, JSON.stringify(fundatoryBets));
+            localStorage.setItem(STORAGE_KEYS.ACTIVE_BETS, JSON.stringify(activeBets));
         }
 
         // Store final round data before clearing (fallback if try block didn't execute)
@@ -589,7 +686,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (!savedRound) return false;
         try {
             const parsed = JSON.parse(savedRound);
-            if ((parsed.status === 'active' || parsed.status === 'ended') && parsed.startTime) {
+            if ((parsed.status === ROUND_STATUS.ACTIVE || parsed.status === ROUND_STATUS.ENDED) && parsed.startTime) {
                 const startTime = new Date(parsed.startTime);
                 const now = new Date();
                 const minutesSinceStart = (now.getTime() - startTime.getTime()) / (1000 * 60);
@@ -607,7 +704,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (savedRound) {
             try {
                 const parsed = JSON.parse(savedRound);
-                if ((parsed.status === 'active' || parsed.status === 'ended') && parsed.startTime) {
+                if ((parsed.status === ROUND_STATUS.ACTIVE || parsed.status === ROUND_STATUS.ENDED) && parsed.startTime) {
                     const startTime = new Date(parsed.startTime);
                     const now = new Date();
                     const minutesSinceStart = (now.getTime() - startTime.getTime()) / (1000 * 60);
@@ -616,7 +713,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         // Ensure all round properties are set
                         const restoredRound: GameRound = {
                             ...parsed,
-                            status: 'active',
+                            status: ROUND_STATUS.ACTIVE,
                             activeHole: parsed.activeHole ?? 1,
                             teeOrder: parsed.teeOrder || (parsed.players ? parsed.players.map((p: Player) => p.id || (p as any).uid).filter(Boolean) : []),
                             currentTeeIndex: parsed.currentTeeIndex ?? 0
@@ -626,18 +723,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         if (parsed.fundatoryBets) {
                             setFundatoryBets(parsed.fundatoryBets);
                         }
-                        const savedActiveBets = localStorage.getItem('activeBets');
+                        const savedActiveBets = localStorage.getItem(STORAGE_KEYS.ACTIVE_BETS);
                         if (savedActiveBets) {
                             try {
                                 setActiveBets(JSON.parse(savedActiveBets));
                             } catch (e) {
-                                console.error('Error loading active bets:', e);
+                                logger.error('Failed to load active bets', e, {
+                                    key: STORAGE_KEYS.ACTIVE_BETS,
+                                    operation: 'restore-recent-round',
+                                });
                             }
                         }
                     }
                 }
             } catch (e) {
-                console.error('Error restoring round:', e);
+                logger.error('Failed to restore round', e, {
+                    key: 'currentRound',
+                    operation: 'restore-recent-round',
+                });
             }
         }
     }, []);
@@ -647,7 +750,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
             if (!prev) return prev;
             const exists = prev.players.some((p: Player) => p.id === player.id);
             if (exists) {
-                console.warn('Player already in round');
+                logger.warn('Player already in round', {
+                    playerId: player.id,
+                    playerName: player.name,
+                    roundId: prev.startTime,
+                });
                 return prev;
             }
             const updatedPlayers = [...prev.players, player];
@@ -679,7 +786,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const getCachedRounds = useCallback((): Array<{ timestamp: string, round: GameRound, courseName: string, holesPlayed: number }> => {
         if (typeof window === 'undefined') return [];
         try {
-            const cached = localStorage.getItem('cachedRounds');
+            const cached = localStorage.getItem(STORAGE_KEYS.CACHED_ROUNDS);
             if (!cached) return [];
             const cachedRounds = JSON.parse(cached);
             return cachedRounds.map((item: any) => ({
@@ -691,7 +798,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
             );
         } catch (e) {
-            console.error('Error getting cached rounds:', e);
+            logger.error('Failed to get cached rounds', e, {
+                key: STORAGE_KEYS.CACHED_ROUNDS,
+                operation: 'get-cached-rounds',
+            });
             return [];
         }
     }, []);
@@ -699,7 +809,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const restoreCachedRound = useCallback((timestamp: string) => {
         if (typeof window === 'undefined') return;
         try {
-            const cached = localStorage.getItem('cachedRounds');
+            const cached = localStorage.getItem(STORAGE_KEYS.CACHED_ROUNDS);
             if (!cached) return;
             const cachedRounds = JSON.parse(cached);
             const roundData = cachedRounds.find((item: CachedRound) => item.timestamp === timestamp);
@@ -707,7 +817,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 const parsed = roundData.round;
                 const restoredRound: GameRound = {
                     ...parsed,
-                    status: 'active',
+                    status: ROUND_STATUS.ACTIVE,
                     activeHole: parsed.activeHole ?? 1,
                     teeOrder: parsed.teeOrder || (parsed.players ? parsed.players.map((p: Player) => p.id || (p as any).uid).filter(Boolean) : []),
                     currentTeeIndex: parsed.currentTeeIndex ?? 0
@@ -719,24 +829,38 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 }
             }
         } catch (e) {
-            console.error('Error restoring cached round:', e);
+            logger.error('Failed to restore cached round', e, {
+                timestamp,
+                key: STORAGE_KEYS.CACHED_ROUNDS,
+                operation: 'restore-cached-round',
+            });
         }
     }, []);
 
-    const updateCourseLayout = useCallback((layoutId: string, holePars: { [holeNumber: number]: number }) => {
+    const updateCourseLayout = useCallback((layoutId: string, holePars: { [holeNumber: number]: number }, holeDistances?: { [holeNumber: number]: number }) => {
         setCurrentRound((prev: GameRound | null) => {
             if (!prev || !prev.course) return prev;
             const updatedCourse = { ...prev.course };
             if (!updatedCourse.layouts) updatedCourse.layouts = {};
             if (!updatedCourse.layouts[layoutId]) updatedCourse.layouts[layoutId] = { name: layoutId, holes: {}, parTotal: 0 };
 
+            // Update pars
             Object.entries(holePars).forEach(([holeNum, par]) => {
                 const holeNumber = parseInt(holeNum);
                 if (!updatedCourse.layouts[layoutId].holes) updatedCourse.layouts[layoutId].holes = {};
-                // Preserve existing hole info if any
                 const existingHole = updatedCourse.layouts[layoutId].holes[holeNumber] || {};
                 updatedCourse.layouts[layoutId].holes[holeNumber] = { ...existingHole, par };
             });
+
+            // Update distances if provided
+            if (holeDistances) {
+                Object.entries(holeDistances).forEach(([holeNum, distance]) => {
+                    const holeNumber = parseInt(holeNum);
+                    if (!updatedCourse.layouts[layoutId].holes) updatedCourse.layouts[layoutId].holes = {};
+                    const existingHole = updatedCourse.layouts[layoutId].holes[holeNumber] || {};
+                    updatedCourse.layouts[layoutId].holes[holeNumber] = { ...existingHole, distance };
+                });
+            }
 
             // Recalculate total par
             let totalPar = 0;
@@ -754,7 +878,235 @@ export function GameProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
-    const contextValue = {
+    // Live Round State & Sync
+    const [liveMode, setLiveMode] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    // Sync Active Round from Firestore if liveMode is on
+    useEffect(() => {
+        let unsubscribe: (() => void) | undefined;
+
+        const setupSubscription = async () => {
+            if (liveMode && currentRound?.id && !currentRound.id.startsWith('local_')) {
+                const { subscribeToRound } = await import('@/lib/rounds');
+                unsubscribe = subscribeToRound(currentRound.id, (updatedRound) => {
+                    // Merge remote updates into local state
+                    setCurrentRound(prev => {
+                        if (!prev) return null;
+                        // Only merge specific fields, keep local players array intact
+                        // updatedRound is a Firestore Round type, map to GameRound
+                        const mappedStatus = updatedRound.status === 'completed' ? ROUND_STATUS.ENDED : updatedRound.status;
+                        return {
+                            ...prev,
+                            scores: updatedRound.scores || prev.scores,
+                            status: mappedStatus as 'active' | 'ended' | 'partial',
+                            startTime: typeof updatedRound.date === 'string' ? updatedRound.date : prev.startTime
+                        };
+                    });
+                });
+            }
+        };
+
+        setupSubscription();
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, [liveMode, currentRound?.id]);
+
+    const toggleLiveMode = async () => {
+        if (!currentRound) return;
+
+        const newMode = !liveMode;
+        setLiveMode(newMode);
+
+        if (newMode) {
+            // Enabling Live Mode: Create active round in Firestore if it doesn't exist or is local
+            if (!currentRound.id || currentRound.id.startsWith('local_') || currentRound.id.startsWith('temp_')) {
+                try {
+                    const { createActiveRound } = await import('@/lib/rounds');
+                    // Prepare round data for cloud
+                    // We need to be careful with types here
+                    const roundData = {
+                        courseId: currentRound.course?.id || currentRound.course?.name || 'unknown',
+                        layoutId: currentRound.course?.selectedLayoutKey || 'default',
+                        date: currentRound.startTime || new Date().toISOString(),
+                        players: currentRound.players.map(p => p.id),
+                        scores: currentRound.scores || {},
+                        bets: {
+                            skins: {},
+                            nassau: null,
+                            fundatory: fundatoryBets || [],
+                            mrtzResults: {}
+                        },
+                        status: ROUND_STATUS.ACTIVE
+                    };
+
+                    const newId = await createActiveRound(roundData);
+                    setCurrentRound(prev => prev ? { ...prev, id: newId } : null);
+                } catch (e) {
+                    logger.error('Failed to go live', e, {
+                        courseId: currentRound.course?.id,
+                        playerCount: currentRound.players.length,
+                        operation: 'toggle-live-mode',
+                    });
+                    setLiveMode(false); // Revert
+                }
+            }
+        }
+    };
+
+    // Achievement State
+    const [achievement, setAchievement] = useState<{ type: AchievementType; details: string } | null>(null);
+    const [roundAchievements, setRoundAchievements] = useState<Array<{ playerId: string; type: AchievementType; details: string }>>([]);
+
+    // Clear achievements when starting a new round
+    useEffect(() => {
+        if (!currentRound) {
+            setRoundAchievements([]);
+        }
+    }, [currentRound?.id]);
+
+    const updateScore = useCallback((playerId: string, holeNumber: number, score: number) => {
+        // 1. Optimistic Update
+        setCurrentRound((prev: GameRound | null) => {
+            if (!prev) {
+                logger.warn('Cannot update score: no active round', {
+                    playerId,
+                    holeNumber,
+                    score,
+                });
+                return prev;
+            }
+            const newScores = { ...prev.scores };
+            if (!newScores[holeNumber]) {
+                newScores[holeNumber] = {};
+            }
+            newScores[holeNumber][playerId] = score;
+            return { ...prev, scores: newScores };
+        });
+
+        // 2. Remote Update (if Live)
+        if (typeof window !== 'undefined' && currentRound && !currentRound.id?.startsWith('local_')) {
+            // We can use the logic here if we assume ID is valid for remote
+            // But we can't switch on liveMode variable easily inside this callback unless in deps
+            // We'll trust the caller/setup or implement explicit firestore update here later if needed
+            // For now, the sync is ONE-WAY (read), we need WRITE too.
+            // We will implement write in a separate effect or here.
+
+            // Dynamic import to avoid cycles/closure issues if possible, 
+            // but we really should just call updateActiveRound
+            import('@/lib/rounds').then(({ updateActiveRound }) => {
+                // We need to know if we are in live mode.
+                // Ideally we check if currentRound.id is a Firestore ID (no 'local_')
+                if (currentRound.id && !currentRound.id.startsWith('local_')) {
+                    const updateKey = `scores.${holeNumber}.${playerId}`;
+                    updateActiveRound(currentRound.id, {
+                        [updateKey]: score
+                    } as any).catch(e => {
+                        logger.error('Failed to sync score to Firestore', e, {
+                            roundId: currentRound.id,
+                            playerId,
+                            holeNumber,
+                            score,
+                            operation: 'update-score-sync',
+                        });
+                    });
+                }
+            });
+        }
+
+        // Check for achievements
+        if (currentRound?.course?.id && currentRound?.course?.selectedLayoutKey) {
+            const layout = currentRound.course.layouts?.[currentRound.course.selectedLayoutKey];
+            const par = layout?.holes?.[holeNumber]?.par || 3;
+
+            import('@/lib/stats').then(({ checkHoleAchievements }) => {
+                checkHoleAchievements(
+                    playerId,
+                    currentRound.course!.id,
+                    currentRound.course!.selectedLayoutKey!,
+                    holeNumber,
+                    score,
+                    par
+                ).then(result => {
+                    if (result.type !== 'NONE') {
+                        const details = result.details || '';
+                        setAchievement({ type: result.type, details });
+
+                        // Add to history for end of round summary
+                        setRoundAchievements(prev => {
+                            const exists = prev.some(a => a.details === details && a.playerId === playerId);
+                            if (!exists) {
+                                return [...prev, { playerId, type: result.type, details }];
+                            }
+                            return prev;
+                        });
+                    }
+                });
+            });
+        }
+    }, [currentRound?.course, currentRound?.id]);
+
+    const clearAchievement = () => setAchievement(null);
+
+    // MRTZ Ledger functions implementation
+    const getPlayerMRTZBalance = async (playerId: string): Promise<PlayerMRTZSummary | null> => {
+        try {
+            const { getPlayerMRTZSummary: getSummary } = await import('@/lib/mrtzLedger');
+            const summary = await getSummary(playerId);
+            if (!summary) {
+                return {
+                    playerId,
+                    playerName: 'Unknown',
+                    currentBalance: 0,
+                    pendingIn: 0,
+                    pendingOut: 0,
+                    netBalance: 0,
+                    totalWon: 0,
+                    totalLost: 0,
+                    totalSettled: 0,
+                    transactionCount: 0
+                };
+            }
+            return summary;
+        } catch (e) {
+            logger.error('Failed to load MRTZ balance', e, {
+                playerId,
+                operation: 'get-player-mrtz-balance',
+            });
+            return null;
+        }
+    };
+
+    const getPlayerLedger = async (playerId: string, options?: LedgerOptions): Promise<MRTZLedgerEntry[]> => {
+        try {
+            const { getPlayerLedger: getLedger } = await import('@/lib/mrtzLedger');
+            return getLedger(playerId, options);
+        } catch (e) {
+            logger.error('Failed to load player ledger', e, {
+                playerId,
+                options,
+                operation: 'get-player-ledger',
+            });
+            return [];
+        }
+    };
+
+    const getOutstandingBalances = async (playerId: string): Promise<{ owedToMe: OutstandingBalance[]; iOwe: OutstandingBalance[] }> => {
+        try {
+            const { getOutstandingBalances: getBalances } = await import('@/lib/mrtzLedger');
+            return getBalances(playerId);
+        } catch (e) {
+            logger.error('Failed to load outstanding balances', e, {
+                playerId,
+                operation: 'get-outstanding-balances',
+            });
+            return { owedToMe: [], iOwe: [] };
+        }
+    };
+
+    const contextValue: GameContextType = {
         currentRound,
         players,
         course,
@@ -773,7 +1125,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
         startSkins,
         startNassau,
         clearBets,
-        endRound,
+        endRound: async () => {
+            return endRound();
+        },
         isLoading,
         updateCourseLayout,
         hasRecentRound,
@@ -782,34 +1136,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
         removePlayerFromRound,
         getCachedRounds,
         restoreCachedRound,
-        // MRTZ Ledger functions
-        getPlayerMRTZBalance: async (playerId: string): Promise<PlayerMRTZSummary> => {
-            const { getPlayerMRTZSummary: getSummary } = await import('@/lib/mrtzLedger');
-            const summary = await getSummary(playerId);
-            if (!summary) {
-                return {
-                    playerId,
-                    playerName: 'Unknown',
-                    currentBalance: 0,
-                    pendingIn: 0,
-                    pendingOut: 0,
-                    netBalance: 0,
-                    totalWon: 0,
-                    totalLost: 0,
-                    totalSettled: 0,
-                    transactionCount: 0
-                };
+        getPlayerMRTZBalance,
+        getPlayerLedger,
+        getOutstandingBalances,
+        achievement,
+        clearAchievement,
+        roundAchievements,
+        liveMode,
+        toggleLiveMode,
+        roundId: currentRound?.id || null,
+        loadRound: useCallback((round: GameRound) => {
+            setCurrentRound(round);
+            // If it's a remote round, enable live mode automatically
+            if (round.id && !round.id.startsWith('local_') && !round.id.startsWith('temp_')) {
+                setLiveMode(true);
             }
-            return summary;
-        },
-        getPlayerLedger: async (playerId: string, options?: LedgerOptions): Promise<MRTZLedgerEntry[]> => {
-            const { getPlayerLedger: getLedger } = await import('@/lib/mrtzLedger');
-            return getLedger(playerId, options);
-        },
-        getOutstandingBalances: async (playerId: string): Promise<{ owedToMe: OutstandingBalance[]; iOwe: OutstandingBalance[] }> => {
-            const { getOutstandingBalances: getBalances } = await import('@/lib/mrtzLedger');
-            return getBalances(playerId);
-        }
+        }, [])
     };
 
     return (

@@ -52,7 +52,7 @@ const PermissionsDashboard = () => {
         <div className="card" style={{ marginTop: '1rem', borderTop: '4px solid var(--info)' }}>
             <h3>🛠️ App Permissions</h3>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginBottom: '1rem' }}>
-                Hey Caddy needs these to work its magic.
+                Hey Caddie! needs these to work its magic.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>

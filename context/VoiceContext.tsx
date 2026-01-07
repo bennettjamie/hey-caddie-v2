@@ -5,6 +5,7 @@ import Fuse from 'fuse.js';
 import { detectHotWord, extractCommandAfterHotWord } from '@/lib/hotWordDetection';
 import { processQuery } from '@/lib/voiceQueries';
 import { speak, stopSpeaking } from '@/lib/textToSpeech';
+import { logger } from '@/lib/logger';
 
 interface VoiceContextType {
     isListening: boolean;
@@ -24,7 +25,7 @@ const VoiceContext = createContext<VoiceContextType | null>(null);
 
 export function VoiceProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
-        console.log('VoiceProvider mounted');
+        logger.voice('VoiceProvider mounted', { operation: 'voice-provider-init' });
     }, []);
     const [isListening, setIsListening] = useState(false);
     const [isListeningForHotWord, setIsListeningForHotWord] = useState(false);
@@ -330,7 +331,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 const fullText = (finalTranscript + interimTranscript).toLowerCase();
 
                 if (detectHotWord(fullText)) {
-                    console.log('Hot word detected!');
+                    logger.voice('Hot word detected', { fullText, operation: 'hot-word-detection' });
                     stopSpeaking(); // Stop any ongoing TTS
 
                     // Extract command after hot word
@@ -355,7 +356,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
             hotWordInstance.onerror = (event: any) => {
                 if (event.error !== 'no-speech' && event.error !== 'aborted') {
-                    console.error('Hot word recognition error', event.error);
+                    logger.error('Hot word recognition error', event.error, {
+                        errorType: event.error,
+                        operation: 'hot-word-recognition'
+                    });
                 }
             };
 
@@ -398,7 +402,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
                             // Set a slightly tighter timer for interim pauses
                             (window as any).__voiceSilenceTimer = setTimeout(() => {
-                                console.log('Auto-stopping due to silence (interim)');
+                                // Auto-stopping due to silence (interim)
                                 stopListening();
                             }, 2000);
                         }
@@ -408,20 +412,26 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 if (hasFinal && currentTranscript) {
                     const cleanTranscript = currentTranscript.trim();
                     setTranscript(cleanTranscript);
-                    console.log('Voice Command:', cleanTranscript);
+                    logger.voice('Voice command received', {
+                        command: cleanTranscript,
+                        operation: 'voice-command-processing'
+                    });
                     handleCommand(cleanTranscript);
 
                     // Reset silence timer for new commands
                     if ((window as any).__voiceSilenceTimer) clearTimeout((window as any).__voiceSilenceTimer);
                     (window as any).__voiceSilenceTimer = setTimeout(() => {
-                        console.log('Auto-stopping due to silence (final)');
+                        // Auto-stopping due to silence (final)
                         stopListening();
                     }, 2000);
                 }
             };
 
             recognitionInstance.onerror = (event: any) => {
-                console.error('Speech recognition error', event.error);
+                logger.error('Speech recognition error', event.error, {
+                    errorType: event.error,
+                    operation: 'speech-recognition'
+                });
                 if (event.error === 'not-allowed') {
                     setIsListening(false);
                     setError('Microphone access denied');
@@ -437,7 +447,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                     try {
                         recognitionInstance.start();
                     } catch (e) {
-                        console.log("Failed to restart recognition", e);
+                        // Failed to restart recognition (silently ignored)
                     }
                 }
             };
@@ -583,7 +593,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                     hotWordRecognition.stop();
                 }
             } catch (error) {
-                console.error('Error starting recognition:', error);
+                logger.error('Error starting recognition', error, {
+                    operation: 'start-listening'
+                });
             }
         }
     }, [recognition, isListening, hotWordRecognition]);
@@ -598,7 +610,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const startHotWordListening = useCallback(() => {
         // Check browser support first
         if (typeof window === 'undefined' || !(window.SpeechRecognition || window.webkitSpeechRecognition)) {
-            console.warn('Speech Recognition not supported in this browser');
+            logger.warn('Speech Recognition not supported in this browser', {
+                operation: 'start-hot-word-listening'
+            });
             return;
         }
 
@@ -606,12 +620,18 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         if (!hotWordRecognition) {
             if (retryCountRef.current < 5) { // Max 5 retries
                 retryCountRef.current += 1;
-                console.log(`Hot word recognition not ready yet, retrying... (${retryCountRef.current}/5)`);
+                logger.debug('Hot word recognition not ready yet, retrying', {
+                    retry: retryCountRef.current,
+                    maxRetries: 5,
+                    operation: 'start-hot-word-listening'
+                });
                 setTimeout(() => {
                     startHotWordListening();
                 }, 500);
             } else {
-                console.warn('Max retries reached for hot word recognition initialization');
+                logger.warn('Max retries reached for hot word recognition initialization', {
+                    operation: 'start-hot-word-listening'
+                });
                 retryCountRef.current = 0; // Reset for next attempt
             }
             return;
@@ -631,7 +651,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                     recognition.stop();
                 }
             } catch (error) {
-                console.error('Error starting hot word recognition:', error);
+                logger.error('Error starting hot word recognition', error, {
+                    operation: 'start-hot-word-listening'
+                });
             }
         }
     }, [hotWordRecognition, isListeningForHotWord, recognition, stopSpeaking]);
@@ -661,11 +683,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         error: error || null
     };
 
-    console.log('VoiceProvider Value:', {
-        hasStartHotWord: !!contextValue.startHotWordListening,
-        isSupported: contextValue.isSupported
-    });
-
+    // Debug: VoiceProvider context value ready
     return (
         <VoiceContext.Provider
             value={contextValue}

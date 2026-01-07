@@ -5,6 +5,8 @@
 import { db } from './firebase';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { Course, CourseLayout } from '@/types/firestore';
+import { logger } from './logger';
+import { STORAGE_KEYS, CACHE_LIMITS, FIREBASE_TIMEOUTS } from './constants';
 
 export async function getCourse(courseId: string): Promise<Course | null> {
     try {
@@ -14,7 +16,10 @@ export async function getCourse(courseId: string): Promise<Course | null> {
         }
         return null;
     } catch (error) {
-        console.error('Error getting course:', error);
+        logger.error('Error getting course', error, {
+            courseId,
+            operation: 'get-course'
+        });
         return null;
     }
 }
@@ -30,16 +35,21 @@ export async function getAllCourses(): Promise<Course[]> {
 
         // Add timeout for Firebase operations
         const timeoutPromise = new Promise<Course[]>((_, reject) => {
-            setTimeout(() => reject(new Error('Firebase query timed out')), 30000);
+            setTimeout(() => reject(new Error('Firebase query timed out')), FIREBASE_TIMEOUTS.QUERY_TIMEOUT_MS);
         });
 
         const fetchPromise = (async () => {
             try {
                 const snapshot = await getDocs(collection(db, 'courses'));
-                return snapshot.docs.map((doc) => ({
+                const courses = snapshot.docs.map((doc) => ({
                     id: doc.id,
                     ...doc.data()
                 })) as Course[];
+                logger.firebase('Courses fetched successfully', {
+                    count: courses.length,
+                    operation: 'get-all-courses'
+                });
+                return courses;
             } catch (err) {
                 throw err;
             } finally {
@@ -58,7 +68,10 @@ export async function getAllCourses(): Promise<Course[]> {
 
         return courses;
     } catch (error) {
-        console.error('Error getting courses from Firebase:', error);
+        logger.error('Error getting courses from Firebase', error, {
+            operation: 'get-all-courses',
+            fallbackAction: 'returning-cached-courses'
+        });
         // Return cached courses as fallback
         return getLocalCourses();
     }
@@ -68,13 +81,22 @@ export async function searchCourses(searchTerm: string): Promise<Course[]> {
     try {
         const courses = await getAllCourses();
         const lowerSearch = searchTerm.toLowerCase();
-        return courses.filter(
+        const results = courses.filter(
             (course) =>
                 course.name.toLowerCase().includes(lowerSearch) ||
                 course.location?.toLowerCase().includes(lowerSearch)
         );
+        logger.info('Course search completed', {
+            searchTerm,
+            resultCount: results.length,
+            operation: 'search-courses'
+        });
+        return results;
     } catch (error) {
-        console.error('Error searching courses:', error);
+        logger.error('Error searching courses', error, {
+            searchTerm,
+            operation: 'search-courses'
+        });
         return [];
     }
 }
@@ -83,7 +105,7 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
 
     // Create a timeout promise
     const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Firebase operation timed out after 10 seconds')), 10000);
+        setTimeout(() => reject(new Error('Firebase operation timed out after 10 seconds')), FIREBASE_TIMEOUTS.OPERATION_TIMEOUT_MS);
     });
 
     try {
@@ -94,9 +116,18 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
             setDoc(courseRef, course),
             timeoutPromise
         ]);
+        logger.firebase('Course created successfully', {
+            courseId: courseRef.id,
+            courseName: course.name,
+            operation: 'create-course'
+        });
         return courseRef.id;
     } catch (error: any) {
-        console.error('Error creating course:', error);
+        logger.error('Error creating course', error, {
+            courseName: course.name,
+            operation: 'create-course',
+            fallbackAction: 'saving-to-local-storage'
+        });
 
         // Fallback to localStorage if Firebase fails
         if (typeof window !== 'undefined') {
@@ -105,6 +136,11 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
             const newCourseWithId = { id: newId, ...course } as Course;
             localCourses.push(newCourseWithId);
             saveLocalCourses(localCourses);
+            logger.storage('Course saved to localStorage', {
+                courseId: newId,
+                courseName: course.name,
+                operation: 'create-course-local'
+            });
             return newId;
         }
 
@@ -115,8 +151,17 @@ export async function createCourse(course: Omit<Course, 'id'>): Promise<string> 
 export async function updateCourse(courseId: string, updates: Partial<Course>): Promise<void> {
     try {
         await updateDoc(doc(db, 'courses', courseId), updates);
+        logger.firebase('Course updated successfully', {
+            courseId,
+            updateFields: Object.keys(updates),
+            operation: 'update-course'
+        });
     } catch (error) {
-        console.error('Error updating course:', error);
+        logger.error('Error updating course', error, {
+            courseId,
+            updateFields: Object.keys(updates),
+            operation: 'update-course'
+        });
         throw error;
     }
 }
@@ -124,8 +169,15 @@ export async function updateCourse(courseId: string, updates: Partial<Course>): 
 export async function deleteCourse(courseId: string): Promise<void> {
     try {
         await deleteDoc(doc(db, 'courses', courseId));
+        logger.firebase('Course deleted successfully', {
+            courseId,
+            operation: 'delete-course'
+        });
     } catch (error) {
-        console.error('Error deleting course:', error);
+        logger.error('Error deleting course', error, {
+            courseId,
+            operation: 'delete-course'
+        });
         throw error;
     }
 }
@@ -143,8 +195,18 @@ export async function addCourseLayout(courseId: string, layoutId: string, layout
         await updateDoc(doc(db, 'courses', courseId), {
             layouts: updatedLayouts
         });
+        logger.firebase('Course layout added successfully', {
+            courseId,
+            layoutId,
+            layoutName: layout.name,
+            operation: 'add-course-layout'
+        });
     } catch (error) {
-        console.error('Error adding course layout:', error);
+        logger.error('Error adding course layout', error, {
+            courseId,
+            layoutId,
+            operation: 'add-course-layout'
+        });
         throw error;
     }
 }
@@ -153,7 +215,7 @@ export async function addCourseLayout(courseId: string, layoutId: string, layout
 export function getLocalCourses(): Course[] {
     if (typeof window === 'undefined') return [];
     try {
-        const stored = localStorage.getItem('courses');
+        const stored = localStorage.getItem(STORAGE_KEYS.COURSES);
         if (stored) {
             const parsed = JSON.parse(stored);
             // Filter out any invalid entries
@@ -169,11 +231,14 @@ export function getLocalCourses(): Course[] {
 export function saveLocalCourses(courses: Course[]): void {
     if (typeof window === 'undefined') return;
     try {
-        // Keep only valid courses and limit to last 100
-        const validCourses = courses.filter(c => c && c.id && c.name).slice(-100);
-        localStorage.setItem('courses', JSON.stringify(validCourses));
+        // Keep only valid courses and limit per cache limit
+        const validCourses = courses.filter(c => c && c.id && c.name).slice(-CACHE_LIMITS.MAX_COURSES_STORED);
+        localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(validCourses));
     } catch (error) {
-        console.error('Error saving courses locally:', error);
+        logger.error('Error saving courses locally', error, {
+            courseCount: courses.length,
+            operation: 'save-local-courses'
+        });
     }
 }
 
@@ -181,7 +246,7 @@ export function saveLocalCourses(courses: Course[]): void {
 export async function findCoursesNearLocation(
     lat: number,
     lng: number,
-    radiusKm: number = 50
+    radiusKm: number = CACHE_LIMITS.DEFAULT_SEARCH_RADIUS_KM
 ): Promise<Course[]> {
     try {
         const allCourses = await getAllCourses();
@@ -196,12 +261,27 @@ export async function findCoursesNearLocation(
         }));
 
         // Filter by radius and sort by distance
-        return coursesWithDistance
+        const results = coursesWithDistance
             .filter(({ distance }) => distance <= radiusKm)
             .sort((a, b) => a.distance - b.distance)
             .map(({ course }) => course);
+
+        logger.info('Nearby courses found', {
+            lat,
+            lng,
+            radiusKm,
+            resultCount: results.length,
+            operation: 'find-courses-near-location'
+        });
+
+        return results;
     } catch (error) {
-        console.error('Error finding courses near location:', error);
+        logger.error('Error finding courses near location', error, {
+            lat,
+            lng,
+            radiusKm,
+            operation: 'find-courses-near-location'
+        });
         return [];
     }
 }
@@ -257,19 +337,33 @@ export async function updateCourseHolePar(
         await updateDoc(doc(db, 'courses', courseId), {
             layouts: updatedLayouts
         });
+        logger.firebase('Course hole par updated', {
+            courseId,
+            layoutId,
+            holeNumber,
+            newPar,
+            operation: 'update-course-hole-par'
+        });
     } catch (error) {
-        console.error('Error updating course hole par:', error);
+        logger.error('Error updating course hole par', error, {
+            courseId,
+            layoutId,
+            holeNumber,
+            newPar,
+            operation: 'update-course-hole-par'
+        });
         throw error;
     }
 }
 
 /**
- * Update entire layout's par values
+ * Update entire layout's par and distance values
  */
-export async function updateCourseLayoutPars(
+export async function updateCourseLayoutDetails(
     courseId: string,
     layoutId: string,
     holePars: { [holeNumber: number]: number },
+    holeDistances?: { [holeNumber: number]: number },
     courseData?: Course // Optional: pass course data directly to avoid lookup
 ): Promise<void> {
 
@@ -283,7 +377,7 @@ export async function updateCourseLayoutPars(
         // If course not found, try to get it from raw localStorage
         if (!course && typeof window !== 'undefined') {
             try {
-                const raw = localStorage.getItem('courses');
+                const raw = localStorage.getItem(STORAGE_KEYS.COURSES);
                 if (raw) {
                     const parsed = JSON.parse(raw);
                     if (Array.isArray(parsed)) {
@@ -294,7 +388,10 @@ export async function updateCourseLayoutPars(
                     }
                 }
             } catch (e) {
-                console.error('Error reading raw localStorage:', e);
+                logger.error('Error reading raw localStorage', e, {
+                    courseId,
+                    operation: 'update-course-layout-details'
+                });
             }
         }
 
@@ -316,7 +413,7 @@ export async function updateCourseLayoutPars(
             throw new Error('Layout not found');
         }
 
-        // Update all holes with new par values
+        // Update all holes with new par and distance values
         const updatedHoles: { [holeNumber: number]: any } = {};
         // Get max hole from either holePars or existing layout
         const existingHoleNumbers = Object.keys(layout.holes || {}).map(k => parseInt(k)).filter(n => !isNaN(n));
@@ -325,9 +422,12 @@ export async function updateCourseLayoutPars(
         const maxHole = allHoleNumbers.length > 0 ? Math.max(...allHoleNumbers) : 18;
         for (let i = 1; i <= maxHole; i++) {
             const newPar = holePars[i] !== undefined ? holePars[i] : (layout.holes[i]?.par || 3);
+            const newDistance = holeDistances?.[i] !== undefined ? holeDistances[i] : (layout.holes[i]?.distance);
+
             updatedHoles[i] = {
                 ...(layout.holes[i] || {}),
-                par: newPar
+                par: newPar,
+                ...(newDistance !== undefined ? { distance: newDistance } : {})
             };
         }
 
@@ -365,7 +465,7 @@ export async function updateCourseLayoutPars(
         const layout = course.layouts?.[layoutId];
         if (!layout) throw new Error('Layout not found');
 
-        // Update all holes with new par values
+        // Update all holes with new par and distance values
         const updatedHoles: { [holeNumber: number]: any } = {};
         // Get max hole from either holePars or existing layout
         const existingHoleNumbers = Object.keys(layout.holes || {}).map(k => parseInt(k)).filter(n => !isNaN(n));
@@ -374,9 +474,12 @@ export async function updateCourseLayoutPars(
         const maxHole = allHoleNumbers.length > 0 ? Math.max(...allHoleNumbers) : 18;
         for (let i = 1; i <= maxHole; i++) {
             const newPar = holePars[i] !== undefined ? holePars[i] : (layout.holes[i]?.par || 3);
+            const newDistance = holeDistances?.[i] !== undefined ? holeDistances[i] : (layout.holes[i]?.distance);
+
             updatedHoles[i] = {
                 ...(layout.holes[i] || {}),
-                par: newPar
+                par: newPar,
+                ...(newDistance !== undefined ? { distance: newDistance } : {})
             };
         }
 
@@ -397,8 +500,19 @@ export async function updateCourseLayoutPars(
         await updateDoc(doc(db, 'courses', courseId), {
             layouts: updatedLayouts
         });
+        logger.firebase('Course layout details updated', {
+            courseId,
+            layoutId,
+            holeCount: Object.keys(holePars).length,
+            operation: 'update-course-layout-details'
+        });
     } catch (error) {
-        console.error('Error updating course layout pars:', error);
+        logger.error('Error updating course layout details', error, {
+            courseId,
+            layoutId,
+            holeCount: Object.keys(holePars).length,
+            operation: 'update-course-layout-details'
+        });
         throw error;
     }
 }
@@ -430,12 +544,25 @@ export async function saveUserCustomLayout(
             layouts: updatedLayouts
         });
 
+        logger.firebase('User custom layout saved', {
+            courseId,
+            layoutId,
+            layoutName: customLayout.name,
+            submitToDatabase,
+            operation: 'save-user-custom-layout'
+        });
+
         // If submitting to database, save to custom layouts collection
         if (submitToDatabase) {
             await submitCustomLayout(courseId, customLayout);
         }
     } catch (error) {
-        console.error('Error saving user custom layout:', error);
+        logger.error('Error saving user custom layout', error, {
+            courseId,
+            layoutId,
+            layoutName: customLayout.name,
+            operation: 'save-user-custom-layout'
+        });
         throw error;
     }
 }
@@ -462,9 +589,20 @@ export async function submitCustomLayout(
 
         const docRef = doc(collection(db, 'userCustomLayouts'));
         await setDoc(docRef, customLayoutData);
+        logger.firebase('Custom layout submitted for review', {
+            originalCourseId,
+            layoutName: customLayout.name,
+            userId,
+            submissionId: docRef.id,
+            operation: 'submit-custom-layout'
+        });
         return docRef.id;
     } catch (error) {
-        console.error('Error submitting custom layout:', error);
+        logger.error('Error submitting custom layout', error, {
+            originalCourseId,
+            layoutName: customLayout.name,
+            operation: 'submit-custom-layout'
+        });
         throw error;
     }
 }

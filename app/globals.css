@@ -1,36 +1,32 @@
 :root {
-  /* Colors - Premium Dark Theme Default */
-  /* Main Background: Deep Slate */
+  /* Default (Dark) Theme Variables */
   --background: #0F172A; 
-  /* Card Background: Lighter Slate */
   --card-bg: #1E293B;
-  /* Text: Off-white for high readability */
   --text: #F8FAFC;
   --text-light: #94A3B8;
   
   /* Accents */
-  --primary: #10B981;    /* Emerald Green - Action/Success */
+  --primary: #10B981;    /* Emerald Green */
   --primary-dark: #059669;
   --primary-light: #34D399;
-  --secondary: #3B82F6;  /* Blue - Info */
-  --warning: #F59E0B;    /* Amber - Warning/Par */
-  --danger: #EF4444;     /* Red - Error/Bogey */
-  --info: #3B82F6;       /* Blue alias */
-  --success: #10B981;    /* Green alias */
+  --secondary: #3B82F6;  /* Blue */
+  --warning: #F59E0B;    /* Amber */
+  --danger: #EF4444;     /* Red */
+  --info: #3B82F6;
+  --success: #10B981;
 
-  /* Surface Colors for inputs/borders */
+  /* Surface Colors */
   --border: #334155;
   --border-light: #475569;
   --input-bg: #334155;
 
-  /* Spacing */
+  /* Spacing & Typography */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
   --spacing-md: 1rem;
   --spacing-lg: 1.5rem;
   --spacing-xl: 2rem;
   
-  /* Typography */
   --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
@@ -39,7 +35,7 @@
   --font-size-xl: 1.5rem;
   --font-size-2xl: 2rem;
   
-  /* Shadows - tailored for dark mode depth */
+  /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
@@ -53,6 +49,29 @@
   /* Transitions */
   --transition-fast: 0.15s ease;
   --transition-base: 0.2s ease;
+}
+
+[data-theme='light'] {
+  /* Light Theme Overrides */
+  --background: #F1F5F9; /* Slate 100 */
+  --card-bg: #FFFFFF;
+  --text: #0F172A;       /* Slate 900 */
+  --text-light: #64748B; /* Slate 500 */
+
+  /* Accents - slightly adjusted for light mode contrast if needed, mostly same */
+  --primary: #059669;    /* Darker green for text contrast */
+  --primary-dark: #047857;
+  --primary-light: #10B981;
+  
+  /* Surfaces */
+  --border: #CBD5E1;     /* Slate 300 */
+  --border-light: #E2E8F0;
+  --input-bg: #FFFFFF;
+
+  /* Shadows - lighter/softer for light mode */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
 * {

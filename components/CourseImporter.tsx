@@ -1,196 +1,144 @@
 'use client';
 
 import { useState } from 'react';
-import { importCoursesBatch, DGCourseReviewCourse } from '@/lib/courseImport';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { Course } from '@/types/firestore';
 
-export default function CourseImporter() {
+export default function CourseImporter({ onClose }: { onClose: () => void }) {
     const [jsonInput, setJsonInput] = useState('');
-    const [importing, setImporting] = useState(false);
-    const [result, setResult] = useState<{
-        success: number;
-        failed: number;
-        errors: Array<{ course: string; error: string }>;
-    } | null>(null);
+    const [status, setStatus] = useState<'idle' | 'validating' | 'importing' | 'success' | 'error'>('idle');
+    const [message, setMessage] = useState('');
 
     const handleImport = async () => {
+        setStatus('validating');
+        setMessage('');
+
         try {
-            setImporting(true);
-            setResult(null);
-
-            const courses: DGCourseReviewCourse[] = JSON.parse(jsonInput);
-
-            if (!Array.isArray(courses)) {
-                setResult({
-                    success: 0,
-                    failed: 1,
-                    errors: [{ course: 'Parse Error', error: 'Input must be an array of courses' }]
-                });
-                return;
+            // 1. Parse JSON
+            let courseData: Partial<Course>;
+            try {
+                courseData = JSON.parse(jsonInput);
+            } catch (e) {
+                throw new Error('Invalid JSON format');
             }
 
-            // Call API route
-            const response = await fetch('/api/courses/import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ courses })
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                setResult(data);
-                setJsonInput(''); // Clear input on success
-            } else {
-                setResult({
-                    success: 0,
-                    failed: courses.length,
-                    errors: [{ course: 'Import', error: data.error }]
-                });
+            // 2. minimal validation
+            if (!courseData.name || !courseData.layouts) {
+                throw new Error('Missing required fields: name, layouts');
             }
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : 'Invalid JSON';
-            setResult({
-                success: 0,
-                failed: 1,
-                errors: [{ course: 'Parse Error', error: errorMessage }]
-            });
-        } finally {
-            setImporting(false);
+
+            // 3. Prepare data
+            const cleanData = {
+                ...courseData,
+                isPublic: true,
+                source: 'manual-import',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                // Ensure array fields exist
+                images: courseData.images || [],
+                amenities: courseData.amenities || [],
+            };
+
+            setStatus('importing');
+
+            // 4. Save to public_courses
+            await addDoc(collection(db, 'public_courses'), cleanData);
+
+            setStatus('success');
+            setMessage(`Successfully imported "${cleanData.name}"!`);
+            setJsonInput(''); // Clear input on success
+        } catch (error: any) {
+            console.error('Import failed', error);
+            setStatus('error');
+            setMessage(error.message || 'Import failed');
         }
     };
 
-    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const content = e.target?.result as string;
-            setJsonInput(content);
+    const loadExample = () => {
+        const example: Partial<Course> = {
+            name: "DeLaveaga Disc Golf Course",
+            city: "Santa Cruz",
+            state: "CA",
+            country: "USA",
+            rating: 4.8,
+            lat: 37.000,
+            lng: -122.000,
+            layouts: {
+                "masters_cup": {
+                    name: "Masters Cup Layout (24 Holes)",
+                    holeCount: 24,
+                    parTotal: 72,
+                    holes: {
+                        1: { par: 3, distance: 350, label: "1 (I5)" },
+                        2: { par: 3, distance: 280, label: "2" },
+                        // ...
+                        27: {
+                            par: 3,
+                            distance: 550,
+                            label: "Top of the World",
+                            teeLocation: { lat: 37.005, lng: -121.999 },
+                            images: [{ url: "https://example.com/top-of-world.jpg", type: "tee", caption: "View from Tee" }]
+                        }
+                    }
+                }
+            }
         };
-        reader.readAsText(file);
+        setJsonInput(JSON.stringify(example, null, 2));
     };
 
     return (
-        <div className="card">
-            <h2>Import Courses from Web Search</h2>
-            <p style={{ marginTop: '0.5rem', color: 'var(--text-light)', fontSize: '0.875rem' }}>
-                Paste JSON data from external API or scraped data.
-                Courses with the same source ID will be updated.
-            </p>
-
-            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <label style={{ cursor: 'pointer' }}>
-                    <input
-                        type="file"
-                        accept=".json"
-                        onChange={handleFileUpload}
-                        style={{ display: 'none' }}
-                    />
-                    <span className="btn" style={{ backgroundColor: 'var(--info)', fontSize: '0.875rem' }}>
-                        📁 Upload JSON File
-                    </span>
-                </label>
-            </div>
-
-            <textarea
-                value={jsonInput}
-                onChange={(e) => setJsonInput(e.target.value)}
-                placeholder='[{"id": "12345", "name": "Course Name", "city": "City", "state": "State", "latitude": 40.7128, "longitude": -74.0060, "layouts": [{"name": "Main", "holes": [{"number": 1, "par": 3, "distance": 300}]}]}]'
-                style={{
-                    width: '100%',
-                    minHeight: '200px',
-                    padding: '1rem',
-                    marginTop: '1rem',
-                    fontFamily: 'monospace',
-                    fontSize: '0.875rem',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    resize: 'vertical'
-                }}
-            />
-
-            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button
-                    className="btn"
-                    onClick={handleImport}
-                    disabled={!jsonInput.trim() || importing}
-                    style={{
-                        flex: 1,
-                        backgroundColor: 'var(--success)'
-                    }}
-                >
-                    {importing ? 'Importing...' : (() => {
-                        try {
-                            const parsed = jsonInput.trim() ? JSON.parse(jsonInput.trim()) : [];
-                            const count = Array.isArray(parsed) ? parsed.length : 0;
-                            return count > 0 ? `Import ${count} Course${count !== 1 ? 's' : ''}` : 'Import Courses';
-                        } catch {
-                            return 'Import Courses';
-                        }
-                    })()}
-                </button>
-            </div>
-
-            {result && (
-                <div style={{
-                    marginTop: '1rem',
-                    padding: '1rem',
-                    background: result.failed === 0
-                        ? 'rgba(46, 204, 113, 0.1)'
-                        : 'rgba(243, 156, 18, 0.1)',
-                    borderRadius: '8px',
-                    border: `2px solid ${result.failed === 0 ? 'var(--success)' : 'var(--warning)'}`
-                }}>
-                    <div style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                        {result.failed === 0 ? '✅ All courses imported successfully!' : '⚠️ Import completed with errors'}
-                    </div>
-                    <div style={{ marginBottom: '0.5rem' }}>
-                        <strong>Success:</strong> {result.success}
-                    </div>
-                    <div style={{ marginBottom: '0.5rem' }}>
-                        <strong>Failed:</strong> {result.failed}
-                    </div>
-                    {result.errors.length > 0 && (
-                        <div>
-                            <strong>Errors:</strong>
-                            <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
-                                {result.errors.map((err, i) => (
-                                    <li key={i} style={{ fontSize: '0.875rem', color: 'var(--danger)' }}>
-                                        <strong>{err.course}:</strong> {err.error}
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
+        <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 1100,
+            display: 'flex', flexDirection: 'column', padding: '2rem'
+        }}>
+            <div className="card" style={{ maxWidth: '800px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <h2>Import Public Course (JSON)</h2>
+                    <button className="btn" style={{ backgroundColor: 'var(--danger)' }} onClick={onClose}>Close</button>
                 </div>
-            )}
 
-            <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(52, 152, 219, 0.1)', borderRadius: '8px', fontSize: '0.875rem' }}>
-                <strong>Example JSON format:</strong>
-                <pre style={{ marginTop: '0.5rem', fontSize: '0.75rem', overflow: 'auto' }}>
-                    {`[
-  {
-    "id": "12345",
-    "name": "Kiwi Park",
-    "city": "Portland",
-    "state": "Oregon",
-    "latitude": 45.5152,
-    "longitude": -122.6784,
-    "layouts": [
-      {
-        "name": "Main",
-        "holes": [
-          {"number": 1, "par": 3, "distance": 300},
-          {"number": 2, "par": 3, "distance": 250}
-        ]
-      }
-    ]
-  }
-]`}
-                </pre>
+                <p style={{ color: 'var(--text-light)', marginBottom: '1rem' }}>
+                    Paste a JSON object representing the course. Must follow the Course schema.
+                    Supports multiple layouts, GPS coordinates, and images.
+                </p>
+
+                <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn" style={{ backgroundColor: 'var(--info)' }} onClick={loadExample}>Load Example Template</button>
+                </div>
+
+                <textarea
+                    className="input"
+                    style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.85rem', resize: 'none', minHeight: '300px' }}
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                    placeholder='{ "name": "...", "layouts": { ... } }'
+                />
+
+                {message && (
+                    <div style={{
+                        marginTop: '1rem',
+                        padding: '1rem',
+                        backgroundColor: status === 'error' ? 'rgba(255,0,0,0.1)' : 'rgba(0,255,0,0.1)',
+                        border: `1px solid ${status === 'error' ? 'red' : 'green'}`,
+                        borderRadius: '4px'
+                    }}>
+                        {message}
+                    </div>
+                )}
+
+                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                        className="btn"
+                        style={{ backgroundColor: 'var(--success)', minWidth: '120px' }}
+                        onClick={handleImport}
+                        disabled={status === 'validating' || status === 'importing'}
+                    >
+                        {status === 'importing' ? 'Importing...' : 'Import Course'}
+                    </button>
+                </div>
             </div>
         </div>
     );
 }
-
