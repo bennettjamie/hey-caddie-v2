@@ -48,6 +48,33 @@ export function speak(text: string, options: TTSOptions = {}): Promise<void> {
     });
 }
 
+/**
+ * Speak text with personality-specific TTS parameters
+ * @param text - Text to speak
+ * @param mode - Optional personality mode (defaults to current mode)
+ * @param options - Optional additional TTS options (will override personality settings)
+ */
+export async function speakWithPersonality(
+    text: string,
+    mode?: import('./voicePersonality').PersonalityMode,
+    options: TTSOptions = {}
+): Promise<void> {
+    const { PERSONALITY_PRESETS, getCurrentPersonalityMode } = await import('./voicePersonality');
+    const personalityMode = mode || getCurrentPersonalityMode();
+    const config = PERSONALITY_PRESETS[personalityMode];
+
+    // Merge personality config with any override options
+    const ttsOptions: TTSOptions = {
+        rate: options.rate ?? config.rate,
+        pitch: options.pitch ?? config.pitch,
+        volume: options.volume ?? config.volume,
+        voice: options.voice,
+        lang: options.lang,
+    };
+
+    return speak(text, ttsOptions);
+}
+
 export function stopSpeaking(): void {
     if (synth) {
         synth.cancel();

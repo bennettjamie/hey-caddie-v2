@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useGame } from '@/context/GameContext';
+import { useTheme } from '@/context/ThemeContext';
 import CourseAmendmentModal from '@/components/CourseAmendmentModal';
 import BettingSetupModal from '@/components/BettingSetupModal';
 import EndRoundConfirmModal from '@/components/EndRoundConfirmModal';
+import ConfirmationModal from '@/components/ConfirmationModal';
 import { getAllPlayers, searchPlayers, getOrCreatePlayerByName, Player } from '@/lib/players';
 import Fuse from 'fuse.js';
 
@@ -27,8 +29,10 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         getCachedRounds,
         restoreCachedRound
     } = useGame();
+    const { theme, toggleTheme } = useTheme();
 
-    const [activeTab, setActiveTab] = useState<'amend' | 'bets' | 'end' | 'players' | 'cached' | 'mrtz'>('amend');
+    const [activeTab, setActiveTab] = useState<'amend' | 'bets' | 'voice' | 'end' | 'players' | 'cached' | 'mrtz'>('amend');
+    const [personalityMode, setPersonalityModeState] = useState<'casual' | 'professional' | 'funny' | 'encouraging'>('casual');
     const [showAmendmentModal, setShowAmendmentModal] = useState(false);
     const [showBettingModal, setShowBettingModal] = useState(false);
     const [showEndRoundModal, setShowEndRoundModal] = useState(false);
@@ -41,6 +45,42 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
     // Cached rounds
     const [cachedRounds, setCachedRounds] = useState<Array<{ timestamp: string, round: any, courseName: string, holesPlayed: number }>>([]);
+
+    // Confirmation Modal State
+    const [confirmation, setConfirmation] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        isDestructive?: boolean;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+        isDestructive: false
+    });
+
+    const closeConfirmation = () => {
+        setConfirmation(prev => ({ ...prev, isOpen: false }));
+    };
+
+    // Load current personality mode on mount
+    useEffect(() => {
+        const loadPersonality = async () => {
+            const { getCurrentPersonalityMode } = await import('@/lib/voicePersonality');
+            const currentMode = getCurrentPersonalityMode();
+            setPersonalityModeState(currentMode);
+        };
+        loadPersonality();
+    }, []);
+
+    // Handle personality mode change
+    const handlePersonalityChange = async (mode: 'casual' | 'professional' | 'funny' | 'encouraging') => {
+        setPersonalityModeState(mode);
+        const { setPersonalityMode } = await import('@/lib/voicePersonality');
+        setPersonalityMode(mode);
+    };
 
     // Load players for search
     useEffect(() => {
@@ -142,17 +182,33 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h2>Settings</h2>
-                        <button
-                            className="btn"
-                            onClick={onClose}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                backgroundColor: 'var(--danger)',
-                                minHeight: 'auto'
-                            }}
-                        >
-                            ×
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <button
+                                className="btn"
+                                onClick={toggleTheme}
+                                style={{
+                                    padding: '0.5rem',
+                                    backgroundColor: 'var(--card-bg)',
+                                    minHeight: 'auto',
+                                    fontSize: '1.25rem',
+                                    lineHeight: 1
+                                }}
+                                title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                            >
+                                {theme === 'dark' ? '☀️' : '🌙'}
+                            </button>
+                            <button
+                                className="btn"
+                                onClick={onClose}
+                                style={{
+                                    padding: '0.5rem 1rem',
+                                    backgroundColor: 'var(--danger)',
+                                    minHeight: 'auto'
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
                     </div>
 
                     {/* Tabs */}
@@ -178,6 +234,17 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                             }}
                         >
                             Bet Settings
+                        </button>
+                        <button
+                            className="btn"
+                            onClick={() => setActiveTab('voice')}
+                            style={{
+                                backgroundColor: activeTab === 'voice' ? 'var(--primary)' : 'var(--border)',
+                                fontSize: '0.875rem',
+                                padding: '0.5rem 1rem'
+                            }}
+                        >
+                            Voice Settings
                         </button>
                         <button
                             className="btn"
@@ -289,15 +356,71 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                                         <button
                                             className="btn"
                                             onClick={() => {
-                                                if (confirm('Clear all active bets?')) {
-                                                    clearBets();
-                                                }
+                                                setConfirmation({
+                                                    isOpen: true,
+                                                    title: 'Clear Active Bets?',
+                                                    message: 'Are you sure you want to clear all active bets? This cannot be undone.',
+                                                    isDestructive: true,
+                                                    onConfirm: () => {
+                                                        clearBets();
+                                                        closeConfirmation();
+                                                    }
+                                                });
                                             }}
                                             style={{ width: '100%', backgroundColor: 'var(--danger)' }}
                                         >
                                             Clear All Bets
                                         </button>
                                     )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Voice Settings Tab */}
+                        {activeTab === 'voice' && (
+                            <div>
+                                <h3 style={{ marginBottom: '1rem' }}>Voice Personality</h3>
+                                <p style={{ marginBottom: '1rem', color: 'var(--text-light)', fontSize: '0.875rem' }}>
+                                    Choose how Hey Caddie speaks to you during your round.
+                                </p>
+                                <div style={{ marginBottom: '1.5rem' }}>
+                                    <label htmlFor="personality-select" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                                        Personality Mode
+                                    </label>
+                                    <select
+                                        id="personality-select"
+                                        value={personalityMode}
+                                        onChange={(e) => handlePersonalityChange(e.target.value as 'casual' | 'professional' | 'funny' | 'encouraging')}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.75rem',
+                                            fontSize: '1rem',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--border)',
+                                            backgroundColor: 'var(--bg)',
+                                            color: 'var(--text)',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <option value="casual">Casual - Natural and friendly</option>
+                                        <option value="professional">Professional - Formal and precise</option>
+                                        <option value="funny">Funny - Humorous and lighthearted</option>
+                                        <option value="encouraging">Encouraging - Motivational and supportive</option>
+                                    </select>
+                                </div>
+                                <div style={{
+                                    padding: '1rem',
+                                    backgroundColor: 'rgba(0, 242, 96, 0.1)',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(0, 242, 96, 0.3)'
+                                }}>
+                                    <h4 style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>Voice Commands</h4>
+                                    <ul style={{ fontSize: '0.75rem', color: 'var(--text-light)', paddingLeft: '1.25rem', margin: 0 }}>
+                                        <li>&quot;Hey Caddie, tell me a joke&quot;</li>
+                                        <li>&quot;Hey Caddie, how am I doing?&quot;</li>
+                                        <li>&quot;Hey Caddie, summarize the front nine&quot;</li>
+                                        <li>Automatic encouragement after scores</li>
+                                    </ul>
                                 </div>
                             </div>
                         )}
@@ -349,9 +472,16 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                                                 <button
                                                     className="btn"
                                                     onClick={() => {
-                                                        if (confirm(`Remove ${player.name} from this round?`)) {
-                                                            removePlayerFromRound(player.id);
-                                                        }
+                                                        setConfirmation({
+                                                            isOpen: true,
+                                                            title: 'Remove Player?',
+                                                            message: `Are you sure you want to remove ${player.name} from this round?`,
+                                                            isDestructive: true,
+                                                            onConfirm: () => {
+                                                                removePlayerFromRound(player.id);
+                                                                closeConfirmation();
+                                                            }
+                                                        });
                                                     }}
                                                     style={{
                                                         padding: '0.25rem 0.75rem',
@@ -466,8 +596,17 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                                                 <button
                                                     className="btn"
                                                     onClick={() => {
-                                                        restoreCachedRound(cached.timestamp);
-                                                        onClose();
+                                                        setConfirmation({
+                                                            isOpen: true,
+                                                            title: 'Restore Round?',
+                                                            message: 'This will replace your current round. Are you sure?',
+                                                            isDestructive: false,
+                                                            onConfirm: () => {
+                                                                restoreCachedRound(cached.timestamp);
+                                                                closeConfirmation();
+                                                                onClose();
+                                                            }
+                                                        });
                                                     }}
                                                     style={{
                                                         width: '100%',
@@ -493,29 +632,31 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     course={currentRound.course}
                     layoutId={currentRound.course.selectedLayoutKey || 'default'}
                     onClose={() => setShowAmendmentModal(false)}
-                    onSave={async (holePars, submitToDatabase) => {
+                    onSave={async ({ pars, distances }, submitToDatabase) => {
                         const layoutId = currentRound.course.selectedLayoutKey || 'default';
                         const courseId = currentRound.course.id || currentRound.course.name;
 
-                        updateCourseLayout(layoutId, holePars);
+                        updateCourseLayout(layoutId, pars, distances);
 
                         try {
-                            const { updateCourseLayoutPars, saveUserCustomLayout } = await import('@/lib/courses');
-                            await updateCourseLayoutPars(courseId, layoutId, holePars);
+                            const { updateCourseLayoutDetails, saveUserCustomLayout } = await import('@/lib/courses');
+                            await updateCourseLayoutDetails(courseId, layoutId, pars, distances);
 
                             if (submitToDatabase) {
                                 const layout = currentRound.course.layouts?.[layoutId];
                                 if (layout) {
                                     const customLayout: any = {
                                         ...layout,
-                                        holes: Object.entries(holePars).reduce((acc, [holeNum, par]) => {
-                                            acc[holeNum] = {
-                                                ...layout.holes?.[parseInt(holeNum)],
-                                                par
+                                        holes: Object.entries(pars).reduce((acc, [holeNum, par]) => {
+                                            const hn = parseInt(holeNum);
+                                            acc[hn] = {
+                                                ...(layout.holes?.[hn] || {}),
+                                                par,
+                                                distance: distances[hn]
                                             };
                                             return acc;
                                         }, {} as any),
-                                        parTotal: Object.values(holePars).reduce((sum, par) => sum + par, 0)
+                                        parTotal: Object.values(pars).reduce((sum, par) => sum + par, 0)
                                     };
                                     await saveUserCustomLayout(courseId, layoutId, customLayout, true);
                                 }
@@ -551,6 +692,15 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     }}
                 />
             )}
+
+            <ConfirmationModal
+                isOpen={confirmation.isOpen}
+                title={confirmation.title}
+                message={confirmation.message}
+                onConfirm={confirmation.onConfirm}
+                onCancel={closeConfirmation}
+                isDestructive={confirmation.isDestructive}
+            />
         </>
     );
 }

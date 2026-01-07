@@ -23,6 +23,9 @@ interface VoiceContextType {
 const VoiceContext = createContext<VoiceContextType | null>(null);
 
 export function VoiceProvider({ children }: { children: ReactNode }) {
+    useEffect(() => {
+        console.log('VoiceProvider mounted');
+    }, []);
     const [isListening, setIsListening] = useState(false);
     const [isListeningForHotWord, setIsListeningForHotWord] = useState(false);
     const [transcript, setTranscript] = useState('');
@@ -70,6 +73,30 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             lowerText.includes("show me") ||
             lowerText.includes("tell me")) {
             return { type: 'QUESTION', text: lowerText };
+        }
+
+        // Joke request
+        if (lowerText.includes('tell me a joke') ||
+            lowerText.includes('tell a joke') ||
+            lowerText.includes('joke') && !lowerText.includes('no joke')) {
+            return { type: 'JOKE' };
+        }
+
+        // Round summary requests
+        if (lowerText.includes('how am i doing') ||
+            lowerText.includes('how are we doing') ||
+            lowerText.includes('round summary') ||
+            lowerText.includes('summarize')) {
+
+            // Check for front 9 / back 9 specific
+            if (lowerText.includes('front nine') || lowerText.includes('front 9')) {
+                return { type: 'SUMMARY', segment: 'front9' };
+            }
+            if (lowerText.includes('back nine') || lowerText.includes('back 9')) {
+                return { type: 'SUMMARY', segment: 'back9' };
+            }
+
+            return { type: 'SUMMARY', segment: 'overall' };
         }
 
         // Round management
@@ -223,6 +250,22 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 if (!playerName.match(/^(who|what|where|when|why|how|tell|show|read)/)) {
                     return { type: 'SCORE', player: playerName, score: value, term, holeNumber };
                 }
+            }
+        }
+
+        // Numeric Score Parsing (New)
+        // Pattern: "Player got a [number]" or "I got a [number]"
+        const numericMatch = lowerText.match(/([^,]+?)\s+(?:got|made|scored|took)(?:\s+a)?\s+(\d+)/);
+        if (numericMatch) {
+            const playerName = numericMatch[1].trim();
+            const scoreValue = parseInt(numericMatch[2], 10);
+
+            // Need current hole par to convert absolute score to relative
+            // We'll pass this as a raw number and let the component handle the math
+            // OR handling it here if we have access to par (which we don't easily in this context without scanning the whole course)
+            // Strategy: Pass type 'SCORE_NUMERIC' and let ActiveRound handle the calculation
+            if (!playerName.match(/^(who|what|where|when|why|how|tell|show|read)/)) {
+                return { type: 'SCORE_NUMERIC', player: playerName, score: scoreValue, holeNumber };
             }
         }
 
@@ -428,6 +471,68 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                     await speak(noResponse);
                 }
             }
+        } else if (command.type === 'JOKE') {
+            // Tell a joke
+            const { getRandomJoke, PERSONALITY_PRESETS, getCurrentPersonalityMode } = await import('@/lib/voicePersonality');
+            const { PERSONALITY_CONFIG } = await import('@/lib/constants');
+            const joke = getRandomJoke();
+
+            // Tell setup
+            setLastResponse(`${joke.setup}... ${joke.punchline}`);
+            await speak(joke.setup);
+
+            // Dramatic pause
+            await new Promise(resolve => setTimeout(resolve, PERSONALITY_CONFIG.JOKE_PAUSE_MS));
+
+            // Deliver punchline
+            await speak(joke.punchline);
+
+        } else if (command.type === 'SUMMARY') {
+            // Generate round summary
+            const { generateFront9Summary, generateRoundSummary } = await import('@/lib/voicePersonality');
+
+            if (gameState && gameState.currentRound) {
+                let summary: string;
+
+                // Helper function to calculate segment scores
+                const calculateSegmentScores = (round: any, startHole: number, endHole: number) => {
+                    const result: { [playerId: string]: { name: string; total: number; scores: number[] } } = {};
+
+                    round.players.forEach((player: any) => {
+                        const scores: number[] = [];
+                        let total = 0;
+
+                        for (let hole = startHole; hole <= endHole; hole++) {
+                            const holeScores = round.scores[hole];
+                            if (holeScores && holeScores[player.id] !== undefined) {
+                                scores.push(holeScores[player.id]);
+                                total += holeScores[player.id];
+                            }
+                        }
+
+                        result[player.id] = { name: player.name, total, scores };
+                    });
+
+                    return result;
+                };
+
+                if (command.segment === 'front9') {
+                    const front9Scores = calculateSegmentScores(gameState.currentRound, 1, 9);
+                    summary = generateFront9Summary(front9Scores, gameState.currentRound.players[0]?.id);
+                } else if (command.segment === 'back9') {
+                    const back9Scores = calculateSegmentScores(gameState.currentRound, 10, 18);
+                    summary = generateFront9Summary(back9Scores, gameState.currentRound.players[0]?.id);
+                } else {
+                    summary = generateRoundSummary(gameState, gameState.currentRound.players[0]?.id);
+                }
+
+                setLastResponse(summary);
+                await speak(summary);
+            } else {
+                const noRound = "No active round to summarize.";
+                setLastResponse(noRound);
+                await speak(noRound);
+            }
         } else if (command.type === 'MULTI_SCORE') {
             // Handle multiple scores
             setLastCommand(command);
@@ -462,8 +567,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             (window as any).__updateVoiceGameState = (state: any) => {
                 gameStateRef.current = state;
             };
+            // Expose handler for testing
+            (window as any).simulateVoiceCommand = handleCommand;
         }
-    }, []);
+    }, [handleCommand]);
 
     const startListening = useCallback(() => {
         if (recognition && !isListening) {

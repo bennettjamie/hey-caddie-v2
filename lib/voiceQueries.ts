@@ -2,6 +2,8 @@
  * Voice Query Processing and Response Generation
  */
 
+import { applyPersonality } from './voicePersonality';
+
 export interface QueryResponse {
     text: string;
     type: 'leaderboard' | 'scores' | 'betting' | 'course' | 'general';
@@ -122,13 +124,81 @@ export function processQuery(
         return generateHoleNumberResponse(gameState);
     }
 
+    // Caddie Tips & Advice
+    if (
+        lowerText.includes("how should i play") ||
+        lowerText.includes("what's the play") ||
+        lowerText.includes("give me a tip") ||
+        lowerText.includes("caddie advice") ||
+        lowerText.includes("how long is this hole") ||
+        lowerText.includes("distance")
+    ) {
+        return generateCaddieTipResponse(gameState, lowerText);
+    }
+
     return null;
+}
+
+function generateCaddieTipResponse(gameState: any, queryText: string): QueryResponse {
+    if (!gameState.currentRound || !gameState.currentRound.course) {
+        return {
+            text: applyPersonality("I need course data to give advice.", { type: 'course' }),
+            type: 'course'
+        };
+    }
+
+    const activeHole = gameState.activeHole || 1;
+    const layoutKey = gameState.currentRound.course.selectedLayoutKey || 'default';
+    const holeData = gameState.currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole];
+
+    if (!holeData) {
+        return {
+            text: applyPersonality(`I don't have data for hole ${activeHole}.`, { type: 'course' }),
+            type: 'course'
+        };
+    }
+
+    const par = holeData.par || 3;
+    const distance = holeData.distance;
+    const unit = gameState.currentRound.course.distanceUnit || 'yards';
+
+    // Distance query
+    if (queryText.includes("long") || queryText.includes("distance")) {
+        if (distance) {
+            return {
+                text: applyPersonality(`Hole ${activeHole} is ${distance} ${unit}. Par ${par}.`, { type: 'course' }),
+                type: 'course'
+            };
+        } else {
+            return {
+                text: applyPersonality(`Hole ${activeHole} is a par ${par}. Distance is unknown.`, { type: 'course' }),
+                type: 'course'
+            };
+        }
+    }
+
+    // Strategy tip
+    let tip = "";
+    if (par === 3) {
+        tip = `It's a par 3. Aim for the center of the green and play for par.`;
+        if (distance && distance > 200) tip += " It's a long one, so verify your club selection.";
+    } else if (par === 4) {
+        tip = `Par 4. Keep your drive in the fairway to set up a good approach.`;
+        if (distance && distance < 350) tip += " It's short, so you might not need driver.";
+    } else if (par === 5) {
+        tip = `Par 5. Play for a three-shot strategy unless you get a great drive. Scores are made with the wedge here.`;
+    }
+
+    return {
+        text: applyPersonality(tip, { type: 'general' }),
+        type: 'general'
+    };
 }
 
 function generateLeaderboardResponse(gameState: any): QueryResponse {
     if (!gameState.currentRound || !gameState.currentRound.players) {
         return {
-            text: "No active round found.",
+            text: applyPersonality("No active round found.", { type: 'leaderboard' }),
             type: 'leaderboard'
         };
     }
@@ -156,7 +226,7 @@ function generateLeaderboardResponse(gameState: any): QueryResponse {
 
     if (sortedPlayers.length === 0) {
         return {
-            text: "No players in the current round.",
+            text: applyPersonality("No players in the current round.", { type: 'leaderboard' }),
             type: 'leaderboard'
         };
     }
@@ -171,7 +241,7 @@ function generateLeaderboardResponse(gameState: any): QueryResponse {
 
     if (sortedPlayers.length === 1) {
         return {
-            text: `${leader.name} is winning at ${leaderScoreText}.`,
+            text: applyPersonality(`${leader.name} is winning at ${leaderScoreText}.`, { type: 'leaderboard' }),
             type: 'leaderboard'
         };
     }
@@ -192,7 +262,7 @@ function generateLeaderboardResponse(gameState: any): QueryResponse {
     }
 
     return {
-        text: response,
+        text: applyPersonality(response, { type: 'leaderboard' }),
         type: 'leaderboard'
     };
 }
@@ -204,7 +274,7 @@ function generateScoreHistoryResponse(
 ): QueryResponse {
     if (!gameState.currentRound || !gameState.currentRound.players) {
         return {
-            text: "No active round found.",
+            text: applyPersonality("No active round found.", { type: 'scores' }),
             type: 'scores'
         };
     }
@@ -236,7 +306,7 @@ function generateScoreHistoryResponse(
 
     if (holesToRead.length === 0) {
         return {
-            text: "No scores to read back yet.",
+            text: applyPersonality("No scores to read back yet.", { type: 'scores' }),
             type: 'scores'
         };
     }
@@ -260,13 +330,13 @@ function generateScoreHistoryResponse(
 
     if (responses.length === 0) {
         return {
-            text: "No scores found for those holes.",
+            text: applyPersonality("No scores found for those holes.", { type: 'scores' }),
             type: 'scores'
         };
     }
 
     return {
-        text: responses.join(' '),
+        text: applyPersonality(responses.join(' '), { type: 'scores' }),
         type: 'scores'
     };
 }
@@ -274,7 +344,7 @@ function generateScoreHistoryResponse(
 function generatePersonalScoreResponse(gameState: any): QueryResponse {
     if (!gameState.currentRound || !gameState.currentRound.players) {
         return {
-            text: "No active round found.",
+            text: applyPersonality("No active round found.", { type: 'general' }),
             type: 'general'
         };
     }
@@ -283,7 +353,7 @@ function generatePersonalScoreResponse(gameState: any): QueryResponse {
     const player = gameState.currentRound.players[0];
     if (!player) {
         return {
-            text: "No player information found.",
+            text: applyPersonality("No player information found.", { type: 'general' }),
             type: 'general'
         };
     }
@@ -302,7 +372,7 @@ function generatePersonalScoreResponse(gameState: any): QueryResponse {
 
     if (holesPlayed === 0) {
         return {
-            text: "You haven't scored any holes yet.",
+            text: applyPersonality("You haven't scored any holes yet.", { type: 'general' }),
             type: 'general'
         };
     }
@@ -314,7 +384,7 @@ function generatePersonalScoreResponse(gameState: any): QueryResponse {
             : `${totalScore} over par`;
 
     return {
-        text: `You're at ${scoreText} through ${holesPlayed} ${holesPlayed === 1 ? 'hole' : 'holes'}.`,
+        text: applyPersonality(`You're at ${scoreText} through ${holesPlayed} ${holesPlayed === 1 ? 'hole' : 'holes'}.`, { type: 'general' }),
         type: 'general'
     };
 }
@@ -322,7 +392,7 @@ function generatePersonalScoreResponse(gameState: any): QueryResponse {
 function generateParResponse(gameState: any, holeNum: number): QueryResponse {
     if (!gameState.currentRound || !gameState.currentRound.course) {
         return {
-            text: "No course information available.",
+            text: applyPersonality("No course information available.", { type: 'course' }),
             type: 'course'
         };
     }
@@ -333,37 +403,52 @@ function generateParResponse(gameState: any, holeNum: number): QueryResponse {
 
     if (hole && hole.par) {
         return {
-            text: `Hole ${holeNum} is par ${hole.par}.`,
+            text: applyPersonality(`Hole ${holeNum} is par ${hole.par}.`, { type: 'course' }),
             type: 'course'
         };
     }
 
     // Default to par 3 if not specified
     return {
-        text: `Hole ${holeNum} is par 3.`,
+        text: applyPersonality(`Hole ${holeNum} is par 3.`, { type: 'course' }),
         type: 'course'
     };
 }
 
 function generateBettingResponse(gameState: any): QueryResponse {
-    if (!gameState.fundatoryBets || gameState.fundatoryBets.length === 0) {
-        return {
-            text: "No active bets.",
-            type: 'betting'
-        };
+    const { fundatoryBets, activeBets, currentRound, activeHole } = gameState;
+    const pendingFundatory = fundatoryBets?.filter((b: any) => b.status === 'pending') || [];
+
+    let responseText = "";
+
+    // Report Fundatory Bets
+    if (pendingFundatory.length > 0) {
+        responseText += `You have ${pendingFundatory.length} pending fundatory ${pendingFundatory.length === 1 ? 'bet' : 'bets'}. `;
     }
 
-    const pendingBets = gameState.fundatoryBets.filter((bet: any) => bet.status === 'pending');
+    // Report Skins Status (Simple calculation)
+    if (activeBets?.skins?.started && currentRound?.scores) {
+        // Calculate skins won
+        // Note: For full accuracy we'd need the complete calculateSkins logic here,
+        // but for a quick voice response we can summarize carry-overs.
+        // Importing the full logic might be heavy, so we'll give a high-level summary.
+        responseText += "Skins game is active. ";
+    }
 
-    if (pendingBets.length === 0) {
+    // Report Nassau Status
+    if (activeBets?.nassau?.started) {
+        responseText += "Nassau is active. ";
+    }
+
+    if (!responseText) {
         return {
-            text: "No pending bets.",
+            text: applyPersonality("No active bets found.", { type: 'betting' }),
             type: 'betting'
         };
     }
 
     return {
-        text: `You have ${pendingBets.length} pending ${pendingBets.length === 1 ? 'bet' : 'bets'}.`,
+        text: applyPersonality(responseText.trim(), { type: 'betting' }),
         type: 'betting'
     };
 }
@@ -371,14 +456,14 @@ function generateBettingResponse(gameState: any): QueryResponse {
 function generateCourseResponse(gameState: any): QueryResponse {
     if (!gameState.currentRound || !gameState.currentRound.course) {
         return {
-            text: "No course information available.",
+            text: applyPersonality("No course information available.", { type: 'course' }),
             type: 'course'
         };
     }
 
     const courseName = gameState.currentRound.course.name || "Unknown course";
     return {
-        text: `You're playing at ${courseName}.`,
+        text: applyPersonality(`You're playing at ${courseName}.`, { type: 'course' }),
         type: 'course'
     };
 }
@@ -410,7 +495,7 @@ function extractHoleRange(text: string): { start: number; end: number } | undefi
 function generateTeeOrderResponse(gameState: any): QueryResponse {
     if (!gameState.currentRound || !gameState.currentRound.players) {
         return {
-            text: "No active round found.",
+            text: applyPersonality("No active round found.", { type: 'general' }),
             type: 'general'
         };
     }
@@ -421,7 +506,7 @@ function generateTeeOrderResponse(gameState: any): QueryResponse {
 
     if (teeOrder.length === 0 || currentTeeIndex >= teeOrder.length) {
         return {
-            text: "Tee order not set.",
+            text: applyPersonality("Tee order not set.", { type: 'general' }),
             type: 'general'
         };
     }
@@ -431,7 +516,7 @@ function generateTeeOrderResponse(gameState: any): QueryResponse {
 
     if (!currentPlayer) {
         return {
-            text: "Could not find current player.",
+            text: applyPersonality("Could not find current player.", { type: 'general' }),
             type: 'general'
         };
     }
@@ -442,13 +527,13 @@ function generateTeeOrderResponse(gameState: any): QueryResponse {
 
     if (nextPlayer && nextPlayer.id !== currentPlayer.id) {
         return {
-            text: `${currentPlayer.name} is up. ${nextPlayer.name} is next.`,
+            text: applyPersonality(`${currentPlayer.name} is up. ${nextPlayer.name} is next.`, { type: 'general' }),
             type: 'general'
         };
     }
 
     return {
-        text: `${currentPlayer.name} is up.`,
+        text: applyPersonality(`${currentPlayer.name} is up.`, { type: 'general' }),
         type: 'general'
     };
 }
@@ -456,7 +541,7 @@ function generateTeeOrderResponse(gameState: any): QueryResponse {
 function generateHoleNumberResponse(gameState: any): QueryResponse {
     const activeHole = gameState.activeHole || 1;
     return {
-        text: `You're on hole ${activeHole}.`,
+        text: applyPersonality(`You're on hole ${activeHole}.`, { type: 'course' }),
         type: 'course'
     };
 }

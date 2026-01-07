@@ -24,6 +24,7 @@ import Fuse from 'fuse.js';
 import { FinalRoundData, RoundResolution } from '@/types/game';
 import { Player } from '@/lib/players';
 import { FundatoryBet } from '@/lib/betting';
+import AchievementToast from '@/components/AchievementToast';
 
 export default function ActiveRound() {
     const {
@@ -40,7 +41,12 @@ export default function ActiveRound() {
         nextTee,
         setTeeOrder,
         endRound,
-        updateCourseLayout
+        updateCourseLayout,
+        achievement,
+        clearAchievement,
+        liveMode,
+        toggleLiveMode,
+        roundId
     } = useGame();
     const {
         isListening,
@@ -263,13 +269,27 @@ export default function ActiveRound() {
             const value = lastCommand.value || 0.25;
             startNassau(value);
         } else if (lastCommand.type === 'END_ROUND') {
-            if (confirm('End this round? Your scores will be saved to history.')) {
+            setShowEndRoundConfirm(true);
+            /* if (confirm('End this round? Your scores will be saved to history.')) {
                 setShowBettingResults(true);
-            }
+            } */
         } else if (lastCommand.type === 'CHANGE_SCORE') {
             const player = findPlayerByName(lastCommand.player);
             if (player) {
                 updateScore(player.id, activeHole, lastCommand.score);
+            }
+        } else if (lastCommand.type === 'SCORE_NUMERIC') {
+            const player = findPlayerByName(lastCommand.player);
+            if (player) {
+                const holeNum = lastCommand.holeNumber || activeHole;
+                const layoutKey = currentRound.course.selectedLayoutKey || 'default';
+                const par = currentRound.course.layouts?.[layoutKey]?.holes?.[holeNum]?.par || 3;
+
+                // Convert absolute score (e.g. 4) to relative (e.g. +1 if par 3)
+                const relativeScore = lastCommand.score - par;
+
+                updateScore(player.id, holeNum, relativeScore);
+                nextTee();
             }
         } else if (lastCommand.type === 'UNDO_SCORE') {
             // Remove last score for current hole
@@ -280,9 +300,35 @@ export default function ActiveRound() {
 
     if (!currentRound) return null;
 
-    const handleScoreChange = (playerId: string, change: number) => {
+    const handleScoreChange = async (playerId: string, change: number) => {
         const currentScore = currentRound.scores[activeHole]?.[playerId] || 0;
-        updateScore(playerId, activeHole, currentScore + change);
+        const newScore = currentScore + change;
+
+        // Update the score
+        updateScore(playerId, activeHole, newScore);
+
+        // Generate and speak encouragement (non-blocking)
+        try {
+            const layoutKey = currentRound.course.selectedLayoutKey || 'default';
+            const par = currentRound.course.layouts?.[layoutKey]?.holes?.[activeHole]?.par || 3;
+            const player = currentRound.players.find((p: Player) => p.id === playerId);
+
+            if (player) {
+                const { generateEncouragement } = await import('@/lib/voicePersonality');
+                const { speakWithPersonality } = await import('@/lib/textToSpeech');
+
+                const encouragement = generateEncouragement(newScore, par, player.name);
+
+                // Speak encouragement without blocking (fire and forget)
+                speakWithPersonality(encouragement).catch(err => {
+                    // Silently ignore TTS errors
+                    console.warn('TTS encouragement failed:', err);
+                });
+            }
+        } catch (err) {
+            // Silently ignore any errors in encouragement generation
+            console.warn('Failed to generate encouragement:', err);
+        }
     };
 
     // Check for unresolved bets before ending round
@@ -465,6 +511,55 @@ export default function ActiveRound() {
                     </div>
                 </div>
             </header>
+
+            {/* Live Mode Bar */}
+            <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                marginBottom: '1rem', padding: '0.5rem',
+                backgroundColor: liveMode ? 'rgba(231, 76, 60, 0.1)' : 'transparent',
+                border: liveMode ? '1px solid var(--danger)' : '1px solid transparent',
+                borderRadius: '8px'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{
+                        width: '10px', height: '10px',
+                        borderRadius: '50%',
+                        backgroundColor: liveMode ? 'var(--danger)' : 'var(--text-light)',
+                        animation: liveMode ? 'pulse 2s infinite' : 'none'
+                    }} />
+                    <span style={{ fontWeight: 600, fontSize: '0.875rem', color: liveMode ? 'var(--danger)' : 'var(--text-light)' }}>
+                        {liveMode ? 'LIVE' : 'Offline'}
+                    </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {liveMode && roundId && (
+                        <button
+                            className="btn"
+                            style={{
+                                padding: '0.25rem 0.5rem', fontSize: '0.75rem',
+                                backgroundColor: 'var(--primary)', height: 'auto'
+                            }}
+                            onClick={() => {
+                                navigator.clipboard.writeText(roundId);
+                                alert('Round ID copied: ' + roundId);
+                            }}
+                        >
+                            Share ID
+                        </button>
+                    )}
+                    <button
+                        className="btn"
+                        style={{
+                            padding: '0.25rem 0.5rem', fontSize: '0.75rem',
+                            backgroundColor: 'white', color: 'black', border: '1px solid #ccc', height: 'auto'
+                        }}
+                        onClick={() => toggleLiveMode()}
+                    >
+                        {liveMode ? 'Go Offline' : 'Go Live'}
+                    </button>
+                </div>
+            </div>
 
             {/* Tee Order Display */}
             {teeOrder && teeOrder.length > 0 && (
@@ -663,9 +758,25 @@ export default function ActiveRound() {
             </div>
 
             {/* Modals */}
+            {achievement && (
+                <AchievementToast
+                    type={achievement.type}
+                    details={achievement.details}
+                    onClose={clearAchievement}
+                />
+            )}
             {showBettingSetup && <BettingSetupModal onClose={() => setShowBettingSetup(false)} />}
             {showSettingsModal && (
                 <SettingsModal onClose={() => setShowSettingsModal(false)} />
+            )}
+            {showEndRoundConfirm && (
+                <EndRoundConfirmModal
+                    onClose={() => setShowEndRoundConfirm(false)}
+                    onConfirm={() => {
+                        setShowEndRoundConfirm(false);
+                        setShowRoundReview(true);
+                    }}
+                />
             )}
             {showBettingResults && (
                 <div style={{
